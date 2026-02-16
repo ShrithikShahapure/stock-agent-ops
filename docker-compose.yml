@@ -1,0 +1,166 @@
+
+
+networks:
+  app_network:
+    driver: bridge
+
+services:
+  # llama.cpp server (OpenAI-compatible API)
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: llama
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models:ro
+    command: >
+      -m /models/qwen3-7b-q4_k_m.gguf
+      --host 0.0.0.0
+      --port 8080
+      --ctx-size 4096
+      --n-gpu-layers 0
+      --embeddings
+      --parallel 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - app_network
+    deploy:
+      resources:
+        limits:
+          memory: 10G
+
+  # Go backend API server (calls Python ML CLI for ML operations)
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.go
+    container_name: api
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - OUTPUTS_DIR=/app/outputs
+      - LOGS_DIR=/app/logs
+      - PYTHON_PATH=python
+      - SCRIPT_PATH=/app/scripts/ml_cli.py
+      - PYTHON_TIMEOUT=1800
+      # Use llama.cpp for LLM (preferred)
+      - LLAMA_CPP_BASE_URL=http://llama:8080/v1
+      - LLM_MODEL=qwen3-7b
+      # Fallback to Ollama (if llama.cpp unavailable)
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      - redis
+      - qdrant
+    networks:
+      - app_network
+    volumes:
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+      - ./mlruns:/app/mlruns
+      - ./mlartifacts:/app/mlartifacts
+      - ./feature_store:/app/feature_store
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  redis:
+    image: redis/redis-stack:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - app_network
+
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - app_network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - api
+    networks:
+      - app_network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    volumes:
+      - ./grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - app_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "8501:8501"
+    networks:
+      - app_network
+    depends_on:
+      - api
+    environment:
+      - API_URL=http://api:8000
+
+  monitoring_dashboard:
+    build:
+      context: ./monitoring_app
+      dockerfile: Dockerfile
+    container_name: monitoring_dashboard
+    ports:
+      - "8502:8502"
+    depends_on:
+      - api
+    networks:
+      - app_network
+    volumes:
+      - ./outputs:/app/outputs
+    environment:
+      - API_URL=http://api:8000
+
+volumes:
+  redis_data:
+  qdrant_data:

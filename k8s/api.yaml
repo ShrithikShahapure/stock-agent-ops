@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: stock-agent-ops-api:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        env:
+        - name: PORT
+          value: "8000"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: QDRANT_HOST
+          value: "qdrant"
+        - name: QDRANT_PORT
+          value: "6333"
+        - name: OUTPUTS_DIR
+          value: "/app/outputs"
+        - name: LOGS_DIR
+          value: "/app/logs"
+        - name: PYTHON_PATH
+          value: "python"
+        - name: SCRIPT_PATH
+          value: "/app/scripts/ml_cli.py"
+        - name: LLAMA_CPP_BASE_URL
+          value: "http://llama:8080/v1"
+        - name: LLM_MODEL
+          value: "qwen3-7b"
+        - name: MLFLOW_TRACKING_URI
+          value: "http://mlflow:5000"
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        volumeMounts:
+        - name: outputs-volume
+          mountPath: /app/outputs
+        - name: logs-volume
+          mountPath: /app/logs
+      volumes:
+      - name: outputs-volume
+        persistentVolumeClaim:
+          claimName: mlops-outputs-pvc
+      - name: logs-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 8000
+    targetPort: 8000
+  selector:
+    app: api
+---
+# Service alias for backward compatibility with clients using "fastapi" hostname
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+  selector:
+    app: api

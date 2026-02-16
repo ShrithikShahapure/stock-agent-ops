@@ -1,0 +1,42 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# .ENV
+.env/
+*.env
+
+# MLflow
+mlruns/
+mlflow.db
+mlartifacts/
+
+# Logs
+logs/
+
+# Outputs
+outputs/
+
+# Models (large GGUF files)
+models/
+
+# Compiled binaries
+server
+
+# No data
+/data/
+feature_store/data/
+*.db
+grafana/
+
+# Lock files
+uv.lock
+
+claude.md
