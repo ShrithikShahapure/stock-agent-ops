@@ -1,204 +1,294 @@
-# 📈 MLOps Pipeline: End-to-End Weekly Stock Report Generation
+# Stock Agent Ops
 
-[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/kmeanskaran/stock-agent-ops/blob/main/LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Docker Compose](https://img.shields.io/badge/docker-compose-red.svg)](https://docs.docker.com/compose/)
-[![Feast](https://img.shields.io/badge/feature_store-Feast-orange.svg)](https://feast.dev/)
-[![MLflow](https://img.shields.io/badge/tracking-MLflow-blue.svg)](https://mlflow.org/)
+End-to-end stock market prediction and analysis system using transfer learning (LSTM) and agentic AI (LangGraph).
 
-> **Design an end-to-end automated system for weekly stock market analysis using Transfer Learning (LSTM) and Agentic AI (LangGraph).**
+A Go API orchestrates Python ML pipelines, serves predictions with Redis caching, and generates Bloomberg-style analysis reports via a local LLM (Qwen3 7B on llama.cpp).
 
 ---
 
-## 🏗️ Clone & Local Setup
+## Architecture
 
-### 1. Clone the Repository
+```
+User Layer              Logic Layer                       Storage Layer
+────────────           ────────────────────────           ──────────────
+Streamlit UI  ──────>  Go API (Chi router)  ──────────>  Redis (cache, tasks, rate limits)
+  :8501                  |                                Qdrant (semantic vector cache)
+Monitoring UI ──────>    |── Python ML CLI (subprocess)   Feast (feature store)
+  :8502                  |── llama.cpp (Qwen3 7B)         MLflow/DagsHub (experiment tracking)
+                         |── Prometheus ──> Grafana        Filesystem (models, logs, outputs)
+```
+
+**How it works:**
+1. The **Go backend** handles all HTTP requests, rate limiting, caching, and async task management
+2. ML operations (training, prediction, analysis) are delegated to **Python** via a CLI wrapper (`scripts/ml_cli.py`)
+3. The **LSTM model** is trained on S&P 500 (parent), then fine-tuned per ticker via transfer learning (child)
+4. **LangGraph agents** call the LLM to generate analysis reports, cached in Qdrant for 24h
+
+---
+
+## Tech Stack
+
+| Component | Technology |
+|:---|:---|
+| Backend | Go (Chi router) |
+| ML Models | PyTorch LSTM (transfer learning) |
+| LLM | llama.cpp (Qwen3 7B, quantized GGUF) |
+| AI Agents | LangGraph + LangChain |
+| Feature Store | Feast (offline: Parquet, online: Redis) |
+| Experiment Tracking | MLflow (via DagsHub) |
+| Semantic Cache | Qdrant (768-dim vectors, 24h TTL) |
+| Prediction Cache | Redis (24h TTL) |
+| Monitoring | Prometheus + Grafana |
+| Frontend | Streamlit |
+| Deployment | Docker Compose / Kubernetes (Minikube) |
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- [Docker & Docker Compose](https://docs.docker.com/get-docker/)
+- [Finnhub API key](https://finnhub.io/) (free tier works)
+
+### 1. Clone
+
 ```bash
-git clone https://github.com/kmeanskaran/stock-agent-ops.git
+git clone https://github.com/ShrithikShahapure/stock-agent-ops.git
 cd stock-agent-ops
 ```
 
-### 2. Local Environment Setup (Using UV)
-We use `uv` for lightning-fast dependency management.
-```bash
-# Install uv if you haven't
-curl -LsSf https://astral.sh/uv/install.sh | sh
+### 2. Download LLM Model
 
-# Sync dependencies and create venv
-uv sync
-```
-
----
-
-## 🌟 Overview
-
-This project is a production-grade MLOps pipeline that automates the entire lifecycle of stock price prediction and financial reporting. It shifts from traditional monolithic ML scripts to a modular, scalable architecture using modern MLOps tools.
-
-### Key Capabilities:
-- **🧠 Transfer Learning**: Uses a Parent-Child architecture (S&P 500 base model) to predict individual stock prices accurately with minimal data.
-- **🤖 Agentic AI**: A multi-agent system (LangGraph) that acts as a financial analyst, market expert, and editor to generate Bloomberg-quality reports.
-- **📖 Deep Learning & Design**: Explore the [In-depth System Design Guide](./doc/system_design.md) for a technical breakdown.
-- **⚡ Real-time Serving**: Low-latency predictions powered by Go (Chi router) and Redis caching (1-day TTL).
-- **🍽️ Feature Store**: Consistent data management for training and serving using **Feast**.
-- **🔍 Observability**: Full-stack monitoring with Prometheus, Grafana, and Evidently AI for data drift detection.
-
----
-
-## 🏗️ Technical Architecture
-
-```mermaid
-graph TB
-    subgraph "User Layer"
-        UI[Streamlit UI]
-        MON_UI[Monitoring Dashboard]
-    end
-    
-    subgraph "Logic Layer"
-        API[Go API Orchestrator]
-        TRAIN[Training Pipeline]
-        AGENT[LangGraph Agents]
-    end
-    
-    subgraph "Storage & Memory"
-        REDIS[(Redis Cache)]
-        QDRANT[(Qdrant Vector DB)]
-        FEAST[(Feast Feature Store)]
-        MLFLOW[DagsHub MLflow]
-    end
-    
-    UI --> API
-    API --> TRAIN
-    API --> AGENT
-    TRAIN --> FEAST
-    TRAIN --> MLFLOW
-    AGENT --> QDRANT
-    API --> REDIS
-```
-
----
-
-## 🛠️ Tech Stack
-
-| Component | Technology |
-| :--- | :--- |
-| **Model** | PyTorch (LSTM) |
-| **LLM Engine** | llama.cpp (Qwen3 7B / Gemma 3) |
-| **Embeddings** | llama.cpp (OpenAI-compatible API) |
-| **AI Agents** | LangGraph, LangChain |
-| **Feature Store**| Feast |
-| **Registry** | MLflow (via DagsHub) |
-| **Vector DB** | Qdrant (Semantic Caching) |
-| **Cache** | Redis Stack |
-| **Backend** | Go (Chi router) |
-| **Frontend** | Streamlit |
-| **Observability**| Prometheus, Grafana |
-
----
-
-## 🚀 Quick Start
-
-### 1. Prerequisites
-- [Docker & Docker Compose](https://docs.docker.com/get-docker/)
-- [Go 1.21+](https://go.dev/dl/) (for local development)
-- [FINHUB](https://finnhub.io/) (Get FinnHub API key)
-- [UV](https://docs.astral.sh/uv/guides/install-python/) (UV package manager for Python)
-
-#### Download LLM Models (GGUF format)
 ```bash
 mkdir -p models
 
-# Qwen3 7B (recommended, default)
+# Qwen3 7B (recommended, ~4.4 GB)
 wget -O models/qwen3-7b-q4_k_m.gguf \
   https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf
-
-# OR Gemma 3 (alternative - set LLM_MODEL=gemma3-7b in .env)
-wget -O models/gemma3-7b-q4_k_m.gguf \
-  https://huggingface.co/google/gemma-3-7b-it-GGUF/resolve/main/gemma-3-7b-it-q4_k_m.gguf
 ```
 
-### 2. Configure Environment
-Create a `.env` file in the root:
+### 3. Configure Environment
+
 ```bash
-# DagsHub Tracking
-# DagsHub Configuration for Remote MLflow Tracking
+cp .env.example .env
+```
+
+Edit `.env` and add at minimum:
+
+```
+FMI_API_KEY=your_finnhub_api_key
+```
+
+Optional (for remote experiment tracking):
+```
 DAGSHUB_USER_NAME=
 DAGSHUB_REPO_NAME=
 DAGSHUB_TOKEN=
 MLFLOW_TRACKING_URI=
-REDIS_HOST=localhost
-REDIS_PORT=6379
-GOOGLE_API_KEY=
-FMI_API_KEY=
 ```
 
-### 3. Spin up the Stack
-You can use the provided automation script to build and launch all services at once:
+### 4. Start
 
 ```bash
-# Give execution permission
-chmod +x run_docker.sh
-
-# Run the deployment script
 ./run_docker.sh
 ```
 
-Alternatively, use pure Docker Compose:
+Or directly:
+
 ```bash
 docker-compose up --build -d
 ```
 
-### 4. Access the Applications
-- **Streamlit UI**: `http://localhost:8501`
-- **Monitoring App**: `http://localhost:8502`
-- **Grafana**: `http://localhost:3000` (admin/admin)
+### 5. Access
+
+| Service | URL | Credentials |
+|:---|:---|:---|
+| Streamlit UI | http://localhost:8501 | - |
+| Monitoring Dashboard | http://localhost:8502 | - |
+| API Docs (Swagger) | http://localhost:8000/docs | - |
+| Grafana | http://localhost:3000 | admin / admin |
+| Prometheus | http://localhost:9090 | - |
+| llama.cpp | http://localhost:8080/v1 | - |
 
 ---
 
-## 🤖 Agentic AI Workflow
+## API Endpoints
 
-The system employs 4 specialized agents coordinated by **LangGraph**:
+### Training
 
-1. **Performance Analyst**: Interprets raw LSTM forecasts and technical indicators.
-2. **Market Expert**: Scrapes latest news and sentiment using Yahoo Finance tools.
-3. **Report Generator**: Synthesizes data into a professional financial markdown report.
-4. **Critic**: Reviews the output for consistency and logic before final serving.
+```bash
+# Train parent model (S&P 500)
+curl -X POST http://localhost:8000/train-parent
 
-**Semantic Caching**: Reports are embedded and stored in **Qdrant**. If a similar query (95%+ match) is requested within 24 hours, the system serves the cached report instantly.
+# Train child model (transfer learning from parent)
+curl -X POST http://localhost:8000/train-child \
+  -H "Content-Type: application/json" \
+  -d '{"ticker":"AAPL"}'
+
+# Check training status
+curl http://localhost:8000/status/aapl
+```
+
+### Prediction
+
+```bash
+# Predict with child model (auto-trains if model missing)
+curl -X POST http://localhost:8000/predict-child \
+  -H "Content-Type: application/json" \
+  -d '{"ticker":"AAPL"}'
+
+# Predict with parent model
+curl -X POST http://localhost:8000/predict-parent
+```
+
+### Analysis (LLM Agent)
+
+```bash
+# Full Bloomberg-style analysis
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"ticker":"AAPL"}'
+```
+
+### Monitoring
+
+```bash
+# Drift detection + agent evaluation (parent)
+curl -X POST http://localhost:8000/monitor/parent
+
+# Per-ticker monitoring
+curl -X POST http://localhost:8000/monitor/AAPL
+
+# View drift report
+curl http://localhost:8000/monitor/AAPL/drift
+
+# View agent evaluation
+curl http://localhost:8000/monitor/AAPL/eval
+```
+
+### System
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/outputs
+curl http://localhost:8000/system/logs?lines=50
+curl http://localhost:8000/system/cache
+curl http://localhost:8000/metrics
+curl -X DELETE http://localhost:8000/system/reset
+```
+
+Rate limits: 5/hour for training, 40/hour for predictions.
 
 ---
 
-## 📊 MLOps Practices
+## How Transfer Learning Works
 
-- **Auto-Healing**: The API detects missing models and triggers training automatically.
-- **Model Registry**: Every training run is logged to DagsHub with artifacts (scalers, plots, metrics).
-- **Drift Detection**: Evidently AI runs scheduled checks to detect feature drift in stock data.
-- **Transfer Learning**:
-  - `Parent`: Trained on `^GSPC` (S&P 500)
-  - `Child`: Fine-tuned on specific tickers like `NVDA`, `AAPL`, or `GOOG`.
+```
+Parent Model (S&P 500)                Child Model (e.g. AAPL)
+─────────────────────                 ──────────────────────
+^GSPC data (2004-present)    ──>      Load parent weights
+Train LSTM from scratch               Freeze LSTM layers (or fine-tune all)
+20 epochs                              Train FC layer on ticker data
+Save to outputs/parent/                10 epochs, save to outputs/AAPL/
+```
 
----
+The parent model learns general market patterns from the S&P 500 index. Child models inherit these patterns and specialize on individual tickers, requiring less data and fewer epochs.
 
-## 🤝 Connect & Support
-
-If you find this project helpful, let's connect!
-
-<a href="https://x.com/kmeasnskaran" target="_blank">
-    <img src="https://cdn.simpleicons.org/x/white" alt="X logo" width="28" height="28" style="margin-right: 12px;">
-</a>
-<a href="https://linkedin.com/in/kmeanskaran" target="_blank">
-    <img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"/>
-</a>
-<a href="https://kmeanskaran.substack.com" target="_blank">
-    <img src="https://img.shields.io/badge/Substack-FF6719?style=for-the-badge&logo=substack&logoColor=white" alt="Substack"/>
-</a>
-<a href="https://buymeacoffee.com/kmeanskaran" target="_blank">
-    <img src="https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee"/>
-</a>
+**Model architecture:** 3-layer LSTM (128 hidden, 20% dropout) with 7 input features (Open, High, Low, Close, Volume, RSI14, MACD). Context window: 60 days. Forecast horizon: 5 business days.
 
 ---
 
-## 📜 License
+## How AI Analysis Works
 
-Distributed under the MIT License. See `LICENSE` for more information.
+When you call `/analyze`, the system:
+
+1. **Checks Qdrant** for a cached analysis (similarity > 0.95, same ticker, < 24h old)
+2. **Fetches predictions** from `/predict-child` (trains model if missing)
+3. **Fetches news** from Finnhub (falls back to Yahoo Finance)
+4. **Calls LLM once** with predictions + news to generate a Bloomberg-style report
+5. **Caches the result** in Qdrant with embeddings for future lookups
+
+The report includes a market stance (BULLISH/BEARISH/NEUTRAL) and confidence level.
 
 ---
+
+## Project Structure
+
+```
+cmd/server/                  Go entrypoint
+internal/
+  config/                    Environment-based configuration
+  handlers/                  HTTP handlers (health, train, predict, analyze, monitor, system, outputs)
+  http/                      Chi router setup
+  metrics/                   Prometheus metrics (matches Grafana dashboards)
+  middleware/                CORS, logging, rate limiting, panic recovery
+  models/                    Request/response structs
+  services/
+    cache/                   Redis prediction cache (24h TTL)
+    python/                  Python CLI subprocess runner
+    redis/                   Redis client wrapper
+    tasks/                   Background task manager (max 4 workers)
+
+src/
+  agents/                    LangGraph agent (graph.py), nodes, tools
+  data/                      Data ingestion (yfinance) and preparation (PyTorch datasets)
+  llm/                       LLM provider abstraction (llama.cpp primary, Ollama fallback)
+  memory/                    Qdrant semantic cache
+  model/                     LSTM definition, training, evaluation, saving
+  monitoring/                Drift detection, agent evaluation
+  pipelines/                 Training pipeline (parent/child), inference pipeline
+
+scripts/
+  ml_cli.py                  Python CLI called by Go (train, predict, analyze, monitor)
+  smoke.sh                   Endpoint smoke tests
+
+frontend/                    Streamlit UI (port 8501)
+monitoring_app/              Monitoring Streamlit UI (port 8502)
+feature_store/               Feast config and feature definitions
+k8s/                         Kubernetes manifests (api, redis, qdrant, llama, prometheus, grafana, frontends)
+prometheus/                  Prometheus scrape config
+doc/                         System design, API baseline, deployment docs
+```
+
+---
+
+## Kubernetes Deployment
+
+```bash
+./run_k8s.sh
+```
+
+This starts Minikube, builds images, deploys all services, and waits for readiness. Run `sudo minikube tunnel` in a separate terminal for LoadBalancer access.
+
+---
+
+## Smoke Tests
+
+```bash
+./scripts/smoke.sh              # defaults to localhost:8000
+./scripts/smoke.sh http://your-host:8000
+```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|:---|:---|:---|
+| `PORT` | `8000` | API server port |
+| `REDIS_HOST` | `localhost:6379` | Redis address |
+| `QDRANT_HOST` | `qdrant` | Qdrant hostname |
+| `LLAMA_CPP_BASE_URL` | - | llama.cpp server URL (e.g. `http://llama:8080/v1`) |
+| `LLM_MODEL` | `qwen3-7b` | Model name for llama.cpp |
+| `FMI_API_KEY` | - | Finnhub API key for news |
+| `MLFLOW_TRACKING_URI` | - | MLflow tracking server (optional) |
+| `DAGSHUB_USER_NAME` | - | DagsHub username (optional) |
+| `DAGSHUB_REPO_NAME` | - | DagsHub repo name (optional) |
+| `DAGSHUB_TOKEN` | - | DagsHub token (optional) |
+
+---
+
+## License
+
+MIT
