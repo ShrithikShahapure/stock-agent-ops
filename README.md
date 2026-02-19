@@ -275,6 +275,26 @@ Rate limits: 5/hour for training endpoints, 40/hour for predictions.
 
 ---
 
+## MLOps
+
+This project is MLOps-first. Every stage of the ML lifecycle is instrumented.
+
+| Concern | Implementation |
+|:---|:---|
+| **Feature store** | Feast — offline Parquet + online Redis; prevents training-serving skew |
+| **Experiment tracking** | MLflow — params, metrics (MSE/RMSE/R²), artifacts (model, scaler, plots), model registry with Production promotion |
+| **Data drift detection** | Custom Z-score mean-shift per feature + volatility ratio; three health levels (Healthy / Degraded / Critical) |
+| **Agent evaluation** | Heuristic checks on LLM output (relevance, trustworthiness, recommendation presence); scored 0–1 |
+| **Prediction caching** | Redis (`predict_child_{ticker}`, 24h TTL) — cache hit/miss tracked in Prometheus |
+| **Semantic caching** | Qdrant (768-dim cosine, threshold 0.95, 24h TTL) — avoids redundant LLM calls |
+| **Serving observability** | Prometheus metrics: training status/duration/MSE, prediction latency/count, cache hit rate, system resources |
+| **Auto-healing** | Missing model → background training triggered automatically; Redis/MLflow/Feast failures are non-fatal |
+| **Async task management** | Go background worker pool (max 4), Redis-backed status, 2h timeout |
+
+See [doc/mlops.md](doc/mlops.md) for the full MLOps reference: pipeline details, feature store workflow, drift thresholds, agent eval scoring, metric catalogue, artifact layout, and end-to-end sequence diagrams.
+
+---
+
 ## How Transfer Learning Works
 
 The parent model learns general market dynamics from the S&P 500. Child models inherit those weights and fine-tune on individual tickers, needing far less data and fewer epochs.
