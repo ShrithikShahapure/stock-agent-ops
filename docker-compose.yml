@@ -143,23 +143,12 @@ services:
     depends_on:
       - api
     environment:
-      - API_URL=http://api:8000
-
-  monitoring_dashboard:
-    build:
-      context: ./monitoring_app
-      dockerfile: Dockerfile
-    container_name: monitoring_dashboard
-    ports:
-      - "8502:8502"
-    depends_on:
-      - api
-    networks:
-      - app_network
-    volumes:
-      - ./outputs:/app/outputs
-    environment:
-      - API_URL=http://api:8000
+      - API_URL=http://localhost:8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   redis_data:

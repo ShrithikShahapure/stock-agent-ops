@@ -1,16 +1,19 @@
+# Stage 1: Build
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install
+COPY . .
+RUN npm run build
 
-FROM python:3.13-slim
-
-WORKDIR /frontend
-
-# Install uv for dependency management
-RUN pip install uv
-
-COPY . /frontend
-
-# Install dependencies via uv (system-wide)
-RUN uv pip install --system -r requirements.txt
+# Stage 2: Serve
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

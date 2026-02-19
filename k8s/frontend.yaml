@@ -20,14 +20,26 @@ spec:
         - containerPort: 8501
         env:
         - name: API_URL
-          value: "http://fastapi:8000"
+          value: "http://api:8000"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8501
+          initialDelaySeconds: 5
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8501
+          initialDelaySeconds: 3
+          periodSeconds: 10
         resources:
           requests:
-            cpu: "100m"
-            memory: "256Mi"
+            cpu: "50m"
+            memory: "64Mi"
           limits:
-            cpu: "300m"
-            memory: "512Mi"
+            cpu: "200m"
+            memory: "128Mi"
 ---
 apiVersion: v1
 kind: Service
