@@ -3,10 +3,13 @@ import NavBar from "./NavBar";
 
 export default function AppShell() {
   return (
-    <div className="min-h-screen bg-[#0e1117]">
+    <div className="min-h-screen transition-colors duration-200" style={{ backgroundColor: "var(--bg-primary)" }}>
       {/* Subtle gradient overlay at top */}
       <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-gradient-to-b from-blue-500/[0.03] to-transparent rounded-full blur-3xl" />
+        <div
+          className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full blur-3xl"
+          style={{ background: `radial-gradient(ellipse, var(--gradient-overlay), transparent)` }}
+        />
       </div>
 
       <div className="relative z-10">

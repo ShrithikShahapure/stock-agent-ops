@@ -169,12 +169,15 @@ Do not use thinking tags. Write the report directly."""
     else:
         confidence = "Medium"
 
+    predictions_data = raw_data.get("result", {}).get("predictions", {})
+    history_data = raw_data.get("result", {}).get("history", [])
+
     result = {
         "ticker": ticker_upper,
         "final_report": report,
         "recommendation": recommendation,
         "confidence": confidence,
-        "predictions": raw_data.get("result", {}).get("predictions", {}),
+        "predictions": {**predictions_data, "history": history_data},
         "news_sentiment": news[:500]
     }
 

@@ -109,19 +109,17 @@ def predict_parent():
         preds = predict_one_step_and_week(model, df, scaler, ticker)
 
         # Prepare features (history) for frontend plotting
-        # Get last 30 days of history
-        history_df = df.tail(30).copy()
-        # Normalize columns keys
+        # 90 days gives enough context for the quarterly forecast view
+        history_df = df.tail(90).copy()
         history_df.columns = [c.lower() for c in history_df.columns]
-        
+
         if "date" in history_df.columns:
-             preds["history"] = history_df[["date", "close"]].to_dict(orient="records")
+            preds["history"] = history_df[["date", "close"]].to_dict(orient="records")
         else:
-             # If date is index
-             hist_recs = []
-             for idx, row in history_df.iterrows():
-                 hist_recs.append({"date": str(idx.date()), "close": row["close"]})
-             preds["history"] = hist_recs
+            hist_recs = []
+            for idx, row in history_df.iterrows():
+                hist_recs.append({"date": str(idx.date()), "close": row["close"]})
+            preds["history"] = hist_recs
 
         logger.info(f"✅ Parent prediction completed for {ticker}")
         return preds
@@ -159,23 +157,19 @@ def predict_child(ticker: str):
         preds = predict_one_step_and_week(model, df, scaler, ticker)
 
         # Prepare features (history) for frontend plotting
-        # Get last 30 days of history
-        history_df = df.tail(30).copy()
-        # Normalize columns keys
+        # 90 days gives enough context for the quarterly forecast view
+        history_df = df.tail(90).copy()
         history_df.columns = [c.lower() for c in history_df.columns]
-        
+
         if "date" in history_df.columns:
-             # Ensure date is string for JSON serialization if it's timestamp
-             # yfinance dates are usually Timestamps.
-             if not isinstance(history_df["date"].iloc[0], str):
-                  history_df["date"] = history_df["date"].astype(str)
-             preds["history"] = history_df[["date", "close"]].to_dict(orient="records")
+            if not isinstance(history_df["date"].iloc[0], str):
+                history_df["date"] = history_df["date"].astype(str)
+            preds["history"] = history_df[["date", "close"]].to_dict(orient="records")
         else:
-             # If date is index
-             hist_recs = []
-             for idx, row in history_df.iterrows():
-                 hist_recs.append({"date": str(idx.date()), "close": row["close"]})
-             preds["history"] = hist_recs
+            hist_recs = []
+            for idx, row in history_df.iterrows():
+                hist_recs.append({"date": str(idx.date()), "close": row["close"]})
+            preds["history"] = hist_recs
 
         logger.info(f"✅ Child prediction completed for {ticker}")
         return preds

@@ -18,7 +18,7 @@ const features = [
   {
     icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
     title: "LSTM Forecasting",
-    desc: "PyTorch neural network with 5-day price predictions",
+    desc: "PyTorch neural network with multi-horizon price predictions (1W · 1M · 1Q)",
   },
   {
     icon: "M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z",

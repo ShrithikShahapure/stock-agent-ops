@@ -14,11 +14,11 @@ import (
 // TrainHandler handles training endpoints
 type TrainHandler struct {
 	cfg         *config.Config
-	taskManager *tasks.Manager
+	taskManager tasks.ManagerInterface
 }
 
 // NewTrainHandler creates a new train handler
-func NewTrainHandler(cfg *config.Config, taskManager *tasks.Manager) *TrainHandler {
+func NewTrainHandler(cfg *config.Config, taskManager tasks.ManagerInterface) *TrainHandler {
 	return &TrainHandler{
 		cfg:         cfg,
 		taskManager: taskManager,

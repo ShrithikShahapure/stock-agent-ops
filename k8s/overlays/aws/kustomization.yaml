@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base
+
+# ── Image overrides (ECR URIs + SHA tags) ────────────────────────────────────
+# Populated by the CD workflow via `kustomize edit set image`.
+# Placeholders here; the workflow overwrites them before applying.
+images:
+  - name: stock-agent-ops-api
+    newName: "ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/stock-agent-ops/api"
+    newTag: latest
+  - name: stock-agent-ops-frontend
+    newName: "ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/stock-agent-ops/frontend"
+    newTag: latest
+
+# ── Strategic-merge patches ───────────────────────────────────────────────────
+patches:
+  - path: api-patch.yaml
+    target:
+      kind: Deployment
+      name: api
+  - path: frontend-patch.yaml
+    target:
+      kind: Deployment
+      name: frontend

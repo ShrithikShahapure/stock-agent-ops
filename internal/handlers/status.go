@@ -16,11 +16,11 @@ import (
 // StatusHandler handles status endpoints
 type StatusHandler struct {
 	cfg         *config.Config
-	taskManager *tasks.Manager
+	taskManager tasks.ManagerInterface
 }
 
 // NewStatusHandler creates a new status handler
-func NewStatusHandler(cfg *config.Config, taskManager *tasks.Manager) *StatusHandler {
+func NewStatusHandler(cfg *config.Config, taskManager tasks.ManagerInterface) *StatusHandler {
 	return &StatusHandler{
 		cfg:         cfg,
 		taskManager: taskManager,

@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base: all existing k8s manifests (minikube-compatible, no overlay patches).
+resources:
+  - ../api.yaml
+  - ../frontend.yaml
+  - ../redis.yaml
+  - ../qdrant.yaml
+  - ../volumes.yaml
+  - ../prometheus.yaml
+  - ../grafana.yaml
+  - ../llama.yaml

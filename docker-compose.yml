@@ -123,6 +123,43 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+
+      # ── Unified alerting (Grafana 9+) ──
+      - GF_UNIFIED_ALERTING_ENABLED=true
+      - GF_ALERTING_ENABLED=false          # disable legacy alerting
+      - GF_UNIFIED_ALERTING_EXECUTE_ALERTS=true
+
+      # ── SMTP (email contact point) ──────
+      # Local:  use any SMTP relay (Gmail, Mailhog, etc.)
+      # AWS:    use SES SMTP endpoint + SES IAM credentials
+      #         Host:  email-smtp.<region>.amazonaws.com:587
+      #         User:  SES access key ID
+      #         Pass:  SES secret access key
+      - GF_SMTP_ENABLED=${GF_SMTP_ENABLED:-false}
+      - GF_SMTP_HOST=${GF_SMTP_HOST:-localhost:25}
+      - GF_SMTP_USER=${GF_SMTP_USER:-}
+      - GF_SMTP_PASSWORD=${GF_SMTP_PASSWORD:-}
+      - GF_SMTP_FROM_ADDRESS=${GF_SMTP_FROM:-alerts@stock-agent-ops.local}
+      - GF_SMTP_FROM_NAME=Stock Agent Ops
+
+      # ── Alert contact point env vars ────
+      # Email recipients (comma-separated). Default keeps the contact point valid locally;
+      # override with a real address when SMTP is configured.
+      - ALERT_EMAIL=${ALERT_EMAIL:-alerts@localhost}
+      # Slack incoming webhook URL (placeholder keeps contact point valid; override to enable)
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-http://localhost/slack-not-configured}
+      # AWS SNS (leave empty locally)
+      - AWS_SNS_TOPIC_ARN=${AWS_SNS_TOPIC_ARN:-arn:aws:sns:us-east-1:000000000000:placeholder}
+      - AWS_SNS_REGION=${AWS_SNS_REGION:-us-east-1}
+      - AWS_AUTH_PROVIDER=${AWS_AUTH_PROVIDER:-default}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+
+      # ── Deployment label (used in alert annotations) ──
+      - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-local}
+    env_file:
+      - path: .env
+        required: false
     depends_on:
       - prometheus
     volumes:

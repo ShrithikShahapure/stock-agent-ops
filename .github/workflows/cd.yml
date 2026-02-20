@@ -1,0 +1,249 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write   # required for OIDC
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: stock-agent-ops
+  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+
+jobs:
+  # ── Gate: run all tests before any deployment ──────────────────────────────
+  test:
+    name: Tests (gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go tests
+        run: go test ./internal/...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install
+        run: npm ci
+        working-directory: frontend
+
+      - name: Frontend tests
+        run: npm test
+        working-directory: frontend
+
+  # ── Build & push Docker images to ECR ────────────────────────────────────
+  build-and-push:
+    name: Build & Push ECR Images
+    runs-on: ubuntu-latest
+    needs: test
+    outputs:
+      image_tag: ${{ steps.meta.outputs.sha }}
+      ecr_api: ${{ steps.meta.outputs.ecr_api }}
+      ecr_frontend: ${{ steps.meta.outputs.ecr_frontend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          SHA="${GITHUB_SHA::8}"
+          ACCOUNT="${{ secrets.AWS_ACCOUNT_ID }}"
+          REGION="${{ env.AWS_REGION }}"
+          ECR_API="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/stock-agent-ops/api"
+          ECR_FRONTEND="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/stock-agent-ops/frontend"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "ecr_api=${ECR_API}" >> "$GITHUB_OUTPUT"
+          echo "ecr_frontend=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS \
+                           --password-stdin \
+                           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+      - name: Build & push API image
+        env:
+          ECR_API: ${{ steps.meta.outputs.ecr_api }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          docker build -f backend/Dockerfile.go -t "${ECR_API}:${SHA}" -t "${ECR_API}:latest" .
+          docker push "${ECR_API}:${SHA}"
+          docker push "${ECR_API}:latest"
+
+      - name: Build & push frontend image
+        env:
+          ECR_FRONTEND: ${{ steps.meta.outputs.ecr_frontend }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          docker build -f frontend/Dockerfile -t "${ECR_FRONTEND}:${SHA}" -t "${ECR_FRONTEND}:latest" frontend/
+          docker push "${ECR_FRONTEND}:${SHA}"
+          docker push "${ECR_FRONTEND}:latest"
+
+  # ── Terraform apply ────────────────────────────────────────────────────────
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    outputs:
+      cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
+      ecr_api_url: ${{ steps.tf-outputs.outputs.ecr_api_url }}
+      ecr_frontend_url: ${{ steps.tf-outputs.outputs.ecr_frontend_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false   # needed to capture outputs cleanly
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init
+
+      - name: Terraform Apply
+        run: terraform -chdir=terraform apply -auto-approve -input=false
+
+      - name: Capture Terraform outputs
+        id: tf-outputs
+        run: |
+          CLUSTER=$(terraform -chdir=terraform output -raw cluster_name)
+          ECR_API=$(terraform -chdir=terraform output -raw ecr_api_url)
+          ECR_FRONTEND=$(terraform -chdir=terraform output -raw ecr_frontend_url)
+          echo "cluster_name=${CLUSTER}" >> "$GITHUB_OUTPUT"
+          echo "ecr_api_url=${ECR_API}" >> "$GITHUB_OUTPUT"
+          echo "ecr_frontend_url=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
+
+  # ── Deploy to EKS (two-pass: API first, then frontend with real URL) ───────
+  deploy-to-eks:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: [build-and-push, terraform-apply]
+    env:
+      SHA: ${{ needs.build-and-push.outputs.image_tag }}
+      ECR_API: ${{ needs.terraform-apply.outputs.ecr_api_url }}
+      ECR_FRONTEND: ${{ needs.terraform-apply.outputs.ecr_frontend_url }}
+      CLUSTER_NAME: ${{ needs.terraform-apply.outputs.cluster_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name "${{ env.CLUSTER_NAME }}" \
+            --region ${{ env.AWS_REGION }}
+
+      # Pass 1: deploy everything except the frontend
+      - name: Apply non-frontend resources
+        run: |
+          # Pin image tags in the overlay
+          cd k8s/overlays/aws
+          kustomize edit set image \
+            "stock-agent-ops-api=${{ env.ECR_API }}:${{ env.SHA }}"
+          cd ../../..
+
+          # Apply all base resources except frontend
+          kubectl apply -f k8s/redis.yaml
+          kubectl apply -f k8s/qdrant.yaml
+          kubectl apply -f k8s/volumes.yaml
+          kubectl apply -f k8s/prometheus.yaml
+          kubectl apply -f k8s/grafana.yaml
+          kubectl apply -f k8s/llama.yaml
+
+          # Apply API via overlay (strips imagePullPolicy: Never, adds FMI_API_KEY)
+          kustomize build k8s/overlays/aws --load-restrictor LoadRestrictionsNone \
+            | grep -v 'kind: Deployment' \
+            | kubectl apply -f - || true   # ignore empty stream edge-case
+
+          kubectl apply -f k8s/overlays/aws/api-patch.yaml 2>/dev/null || true
+
+          # Deploy API deployment directly with patched image
+          kubectl set image deployment/api \
+            api="${{ env.ECR_API }}:${{ env.SHA }}"
+
+      - name: Wait for API LoadBalancer hostname
+        id: api-lb
+        run: |
+          echo "Waiting for API LoadBalancer to be assigned a hostname..."
+          for i in $(seq 1 30); do
+            HOSTNAME=$(kubectl get svc api \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            if [ -n "$HOSTNAME" ]; then
+              echo "hostname=${HOSTNAME}" >> "$GITHUB_OUTPUT"
+              echo "API LB: ${HOSTNAME}"
+              break
+            fi
+            echo "Attempt ${i}/30 — waiting 10s..."
+            sleep 10
+          done
+          if [ -z "$HOSTNAME" ]; then
+            echo "ERROR: LoadBalancer hostname not assigned after 5 minutes"
+            exit 1
+          fi
+
+      # Pass 2: deploy frontend with the real public API URL
+      - name: Patch & apply frontend
+        env:
+          API_HOSTNAME: ${{ steps.api-lb.outputs.hostname }}
+        run: |
+          # Inject real API URL into the frontend patch
+          sed -i "s|__API_URL_PLACEHOLDER__|http://${API_HOSTNAME}:8000|g" \
+            k8s/overlays/aws/frontend-patch.yaml
+
+          # Pin frontend image tag
+          cd k8s/overlays/aws
+          kustomize edit set image \
+            "stock-agent-ops-frontend=${{ env.ECR_FRONTEND }}:${{ env.SHA }}"
+          cd ../../..
+
+          kubectl set image deployment/frontend \
+            frontend="${{ env.ECR_FRONTEND }}:${{ env.SHA }}"
+
+          kubectl apply -f k8s/overlays/aws/frontend-patch.yaml
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/api --timeout=300s
+          kubectl rollout status deployment/frontend --timeout=300s
+
+      - name: Smoke test
+        env:
+          API_HOSTNAME: ${{ steps.api-lb.outputs.hostname }}
+        run: |
+          sleep 15
+          STATUS=$(curl -sf "http://${API_HOSTNAME}:8000/health" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))")
+          if [ "$STATUS" != "healthy" ]; then
+            echo "Health check failed: got '${STATUS}'"
+            exit 1
+          fi
+          echo "Health check passed."

@@ -19,18 +19,18 @@ import (
 // PredictHandler handles prediction endpoints
 type PredictHandler struct {
 	cfg         *config.Config
-	runner      *python.Runner
-	cache       *cache.Cache
-	taskManager *tasks.Manager
+	runner      python.RunnerInterface
+	cache       cache.CacheInterface
+	taskManager tasks.ManagerInterface
 	metrics     *metrics.Metrics
 }
 
 // NewPredictHandler creates a new predict handler
-func NewPredictHandler(cfg *config.Config, runner *python.Runner, cache *cache.Cache, taskManager *tasks.Manager, m *metrics.Metrics) *PredictHandler {
+func NewPredictHandler(cfg *config.Config, runner python.RunnerInterface, c cache.CacheInterface, taskManager tasks.ManagerInterface, m *metrics.Metrics) *PredictHandler {
 	return &PredictHandler{
 		cfg:         cfg,
 		runner:      runner,
-		cache:       cache,
+		cache:       c,
 		taskManager: taskManager,
 		metrics:     m,
 	}

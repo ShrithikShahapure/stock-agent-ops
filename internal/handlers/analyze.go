@@ -10,11 +10,11 @@ import (
 
 // AnalyzeHandler handles the analyze endpoint
 type AnalyzeHandler struct {
-	runner *python.Runner
+	runner python.RunnerInterface
 }
 
 // NewAnalyzeHandler creates a new analyze handler
-func NewAnalyzeHandler(runner *python.Runner) *AnalyzeHandler {
+func NewAnalyzeHandler(runner python.RunnerInterface) *AnalyzeHandler {
 	return &AnalyzeHandler{runner: runner}
 }
 

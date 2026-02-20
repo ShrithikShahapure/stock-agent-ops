@@ -1,0 +1,22 @@
+# Strategic merge patch — applied on top of k8s/api.yaml for the AWS overlay.
+# Changes:
+#   - Removes imagePullPolicy: Never (images come from ECR, not local daemon)
+#   - Injects FMI_API_KEY from a Kubernetes Secret
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          # Omitting imagePullPolicy lets it default to "Always" for tagged images
+          # and "IfNotPresent" for :latest — either is correct for ECR.
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: FMI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: finnhub_api_key
