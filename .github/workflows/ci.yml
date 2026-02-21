@@ -105,6 +105,16 @@ jobs:
           args: -fmt sarif -out gosec-results.sarif ./internal/...
         continue-on-error: true
 
+      # gosec emits invalid SARIF (relationships[] contains non-objects).
+      # Strip the offending field so upload-sarif accepts it.
+      - name: Fix gosec SARIF schema
+        if: always()
+        run: |
+          if [ -f gosec-results.sarif ]; then
+            jq 'walk(if type == "object" and has("relationships") then del(.relationships) else . end)' \
+              gosec-results.sarif > gosec-results-fixed.sarif && mv gosec-results-fixed.sarif gosec-results.sarif
+          fi
+
       - name: Upload gosec SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
