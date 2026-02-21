@@ -54,7 +54,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Trivy filesystem scan (IaC + deps + secrets) ───────────────────────
+      # ── Tool setup (run all before scans so failures don't skip installs) ──
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install bandit
+        run: pip install bandit[sarif]
+
+      # ── Seed empty SARIF files (so uploads never fail on missing file) ─────
+      - name: Seed empty SARIF stubs
+        run: |
+          for f in trivy-results.sarif gosec-results.sarif bandit-results.sarif; do
+            echo '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"stub","rules":[]}},"results":[]}]}' > "$f"
+          done
+
+      # ── Trivy filesystem scan (SARIF for GitHub Security tab) ──────────────
       - name: Trivy filesystem scan (SARIF)
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -71,22 +97,9 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy-fs
 
-      - name: Trivy filesystem scan (table — fail on CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          format: table
-          severity: CRITICAL
-          exit-code: '1'
-
       # ── gosec — Go static security analysis ────────────────────────────────
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - name: Run gosec
+        if: always()
         uses: securego/gosec@master
         with:
           args: -fmt sarif -out gosec-results.sarif ./internal/...
@@ -100,14 +113,8 @@ jobs:
           category: gosec
 
       # ── Bandit — Python static security analysis ───────────────────────────
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install bandit
-        run: pip install bandit[sarif]
-
       - name: Run bandit
+        if: always()
         run: bandit -r src/ scripts/ -f sarif -o bandit-results.sarif --severity-level medium || true
 
       - name: Upload bandit SARIF
@@ -118,15 +125,22 @@ jobs:
           category: bandit
 
       # ── npm audit — frontend dependency vulnerabilities ────────────────────
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
       - name: npm audit (high + critical)
+        if: always()
         working-directory: frontend
         run: npm audit --audit-level=high || true
+
+      # ── Final gate: re-run Trivy in a clean env to fail on CRITICAL ────────
+      # This must be last so all scans + uploads complete first.
+      # We clear the env vars the first trivy-action wrote to $GITHUB_ENV.
+      - name: Trivy fail on CRITICAL
+        if: always()
+        env:
+          TRIVY_FORMAT: table
+          TRIVY_OUTPUT: ''
+          TRIVY_SEVERITY: CRITICAL
+          TRIVY_EXIT_CODE: '1'
+        run: trivy fs --exit-code 1 --severity CRITICAL --format table .
 
   # ── Terraform validate & plan ──────────────────────────────────────────────
   tf-validate:
@@ -163,12 +177,14 @@ jobs:
         run: terraform -chdir=terraform plan -no-color -input=false -detailed-exitcode
 
       - name: Post Terraform Plan to PR
-        uses: trstringer/terraform-pr-commenter@v1
+        uses: robburger/terraform-pr-commenter@v1
         if: always() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          plan_output: ${{ steps.plan.outputs.stdout }}${{ steps.plan.outputs.stderr }}
-          plan_exit_code: ${{ steps.plan.outputs.exitcode }}
+          commenter_type: plan
+          commenter_input: ${{ format('{0}{1}', steps.plan.outputs.stdout, steps.plan.outputs.stderr) }}
+          commenter_exitcode: ${{ steps.plan.outputs.exitcode }}
 
       # ── Cost estimation (no external tools or API keys) ────────────────────
       # Parses the plan stdout already captured above, extracts resource types
