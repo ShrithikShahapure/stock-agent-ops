@@ -27,139 +27,49 @@ on:
 permissions:
   contents: read
 
-# ── Jobs ──────────────────────────────────────────────────────────────────────
-
 jobs:
   test-go:
-    name: Go Unit Tests
-    runs-on: ubuntu-latest
     if: inputs.go
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run tests
-        run: go test -v -race -count=1 ./internal/...
-
-      - name: Generate coverage report
-        run: go test -coverprofile=coverage.out -covermode=atomic ./internal/...
-
-      - name: Print coverage summary
-        run: go tool cover -func=coverage.out | tail -1
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: go-coverage
-          path: coverage.out
-          retention-days: 7
+    uses: ShrithikShahapure/reuseable-actions/.github/workflows/test-go.yml@main
+    with:
+      test_path: './internal/...'
+      race: true
+      coverage: true
+      ref: ${{ inputs.ref }}
 
   test-frontend:
-    name: Frontend Unit Tests
-    runs-on: ubuntu-latest
     if: inputs.frontend
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests with coverage
-        run: npm test -- --run --reporter=verbose --coverage
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: frontend-coverage
-          path: frontend/coverage/
-          retention-days: 7
+    uses: ShrithikShahapure/reuseable-actions/.github/workflows/test-node.yml@main
+    with:
+      working_directory: 'frontend'
+      test_command: 'npm test -- --run --reporter=verbose --coverage'
+      ref: ${{ inputs.ref }}
 
   test-python-unit:
-    name: Python Unit Tests
-    runs-on: ubuntu-latest
     if: inputs.python_unit
-    env:
-      # Use CPU-only torch to avoid a ~2 GB GPU download in CI
-      UV_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
-
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Install dependencies (dev extras)
-        run: uv sync --extra dev
-
-      - name: Run unit tests
-        run: uv run pytest tests/unit/ -v --tb=short --junitxml=pytest-unit.xml
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: pytest-unit-results
-          path: pytest-unit.xml
-          retention-days: 7
+    uses: ShrithikShahapure/reuseable-actions/.github/workflows/test-python.yml@main
+    with:
+      test_path: 'tests/unit/'
+      package_manager: 'uv'
+      cpu_only_torch: true
+      artifact_name: 'pytest-unit-results'
+      ref: ${{ inputs.ref }}
 
   test-python-integration:
-    name: Python Integration Tests
-    runs-on: ubuntu-latest
     if: inputs.python_integration
-    env:
-      UV_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
+    uses: ShrithikShahapure/reuseable-actions/.github/workflows/test-python.yml@main
+    with:
+      test_path: 'tests/integration/'
+      package_manager: 'uv'
+      cpu_only_torch: true
+      artifact_name: 'pytest-integration-results'
+      ref: ${{ inputs.ref }}
 
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Install dependencies (dev extras)
-        run: uv sync --extra dev
-
-      - name: Run integration tests
-        run: uv run pytest tests/integration/ -v --tb=short --junitxml=pytest-integration.xml
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: pytest-integration-results
-          path: pytest-integration.xml
-          retention-days: 7
-
-  # ── Summary — always runs, fails the workflow if any selected suite failed ──
   summary:
     name: Summary
     runs-on: ubuntu-latest
     if: always()
-    needs:
-      - test-go
-      - test-frontend
-      - test-python-unit
-      - test-python-integration
+    needs: [test-go, test-frontend, test-python-unit, test-python-integration]
     steps:
       - name: Report results
         run: |
