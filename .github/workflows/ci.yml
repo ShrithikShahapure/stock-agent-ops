@@ -142,9 +142,107 @@ jobs:
         working-directory: frontend
         run: npm audit --audit-level=high || true
 
-      # ── Final gate: re-run Trivy in a clean env to fail on CRITICAL ────────
-      # This must be last so all scans + uploads complete first.
-      # We clear the env vars the first trivy-action wrote to $GITHUB_ENV.
+      # ── Trivy table scan for human-readable output ───────────────────────
+      - name: Trivy table scan
+        if: always()
+        env:
+          TRIVY_FORMAT: table
+          TRIVY_OUTPUT: ''
+          TRIVY_SEVERITY: CRITICAL,HIGH
+          TRIVY_EXIT_CODE: '0'
+        run: trivy fs --severity CRITICAL,HIGH --format json --output /tmp/trivy-table.json . || true
+
+      # ── Post security summary to PR ───────────────────────────────────────
+      - name: Post security scan summary to PR
+        uses: actions/github-script@v7
+        if: always() && github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Parse SARIF files for finding counts
+            function countSarif(path) {
+              try {
+                const sarif = JSON.parse(fs.readFileSync(path, 'utf8'));
+                let total = 0;
+                let bySeverity = {};
+                for (const run of sarif.runs || []) {
+                  for (const result of run.results || []) {
+                    total++;
+                    const level = result.level || 'warning';
+                    bySeverity[level] = (bySeverity[level] || 0) + 1;
+                  }
+                }
+                return { total, bySeverity };
+              } catch {
+                return { total: 0, bySeverity: {} };
+              }
+            }
+
+            const trivy = countSarif('trivy-results.sarif');
+            const gosec = countSarif('gosec-results.sarif');
+            const bandit = countSarif('bandit-results.sarif');
+
+            // npm audit — parse from lock file
+            let npmStatus = 'Passed';
+            try {
+              const { execSync } = require('child_process');
+              const out = execSync('npm audit --json 2>/dev/null || true', { cwd: 'frontend' }).toString();
+              const audit = JSON.parse(out);
+              const vulns = audit.metadata?.vulnerabilities || {};
+              const high = (vulns.high || 0) + (vulns.critical || 0);
+              if (high > 0) npmStatus = `${high} high/critical`;
+            } catch {
+              npmStatus = 'Unable to parse';
+            }
+
+            function icon(count) {
+              return count === 0 ? ':white_check_mark:' : ':warning:';
+            }
+            function severityBadge(s) {
+              const parts = [];
+              if (s.error)   parts.push(`${s.error} critical`);
+              if (s.warning) parts.push(`${s.warning} high`);
+              if (s.note)    parts.push(`${s.note} medium`);
+              return parts.length ? parts.join(', ') : 'None';
+            }
+
+            const body = [
+              '## Security Scan Summary',
+              '',
+              '| Scanner | Findings | Details |',
+              '|---------|:--------:|---------|',
+              `| ${icon(trivy.total)} **Trivy** (filesystem) | ${trivy.total} | ${severityBadge(trivy.bySeverity)} |`,
+              `| ${icon(gosec.total)} **gosec** (Go) | ${gosec.total} | ${severityBadge(gosec.bySeverity)} |`,
+              `| ${icon(bandit.total)} **Bandit** (Python) | ${bandit.total} | ${severityBadge(bandit.bySeverity)} |`,
+              `| **npm audit** | ${npmStatus} | frontend dependencies |`,
+              '',
+              `> Full details available in the [Security tab](/${context.repo.owner}/${context.repo.repo}/security/code-scanning) and [workflow run](/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes('Security Scan Summary'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner:      context.repo.owner,
+                repo:       context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      # ── Final gate: fail on CRITICAL vulnerabilities ──────────────────────
       - name: Trivy fail on CRITICAL
         if: always()
         env:
