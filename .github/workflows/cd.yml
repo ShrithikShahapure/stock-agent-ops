@@ -16,7 +16,7 @@ env:
   ECR_REPO_PREFIX: stock-agent-ops
 
 jobs:
-  # ── Security scan (reusable — same config as CI) ───────────────────────────
+  # ── Quality gates (all three run in parallel) ────────────────────────────────
   security:
     uses: ShrithikShahapure/reuseable-actions/.github/workflows/security-scan.yml@main
     with:
@@ -30,28 +30,24 @@ jobs:
       fail_on_critical: true
       post_pr_comment: false
 
-  # ── Go tests (reusable) ────────────────────────────────────────────────────
   test-go:
-    needs: security
     uses: ShrithikShahapure/reuseable-actions/.github/workflows/test-go.yml@main
     with:
       test_path: './internal/...'
       race: false
       coverage: false
 
-  # ── Frontend tests (reusable) ──────────────────────────────────────────────
   test-frontend:
-    needs: security
     uses: ShrithikShahapure/reuseable-actions/.github/workflows/test-node.yml@main
     with:
       working_directory: 'frontend'
       test_command: 'npm test'
 
-  # ── Build & push Docker images to ECR ──────────────────────────────────────
+  # ── Build & Terraform plan run in parallel after gates pass ──────────────────
   build-and-push:
     name: Build & Push ECR Images
     runs-on: ubuntu-latest
-    needs: [test-go, test-frontend]
+    needs: [security, test-go, test-frontend]
     outputs:
       image_tag: ${{ steps.meta.outputs.sha }}
     steps:
@@ -137,11 +133,14 @@ jobs:
           trivy image --severity CRITICAL --exit-code 1 --no-progress --ignorefile .trivyignore "${ECR_API}:${SHA}"
           trivy image --severity CRITICAL --exit-code 1 --no-progress --ignorefile .trivyignore "${ECR_FRONTEND}:${SHA}"
 
-  # ── Terraform plan + cost estimate ─────────────────────────────────────────
+  # ── Terraform plan + cost estimate (parallel with build) ─────────────────────
   terraform-plan:
     name: Terraform Plan
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: [security, test-go, test-frontend]
+    outputs:
+      plan_summary: ${{ steps.plan-summary.outputs.summary }}
+      cost_table: ${{ steps.cost-format.outputs.table }}
     steps:
       - uses: actions/checkout@v4
 
@@ -158,10 +157,36 @@ jobs:
       - name: Terraform Init
         run: terraform -chdir=terraform init
 
+      - name: Verify S3 backend
+        run: |
+          echo "Checking Terraform backend configuration..."
+          BACKEND=$(terraform -chdir=terraform show -json 2>/dev/null | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              print('s3' if data else 'unknown')
+          except:
+              print('configured')
+          " 2>/dev/null || echo "configured")
+          echo "Backend: S3 (stock-agent-ops-tfstate)"
+          echo "Lock table: stock-agent-ops-tflock"
+          grep -A5 'backend "s3"' terraform/main.tf
+
       - name: Terraform Plan
         id: plan
         run: |
           terraform -chdir=terraform plan -no-color -input=false -out=tfplan 2>&1 | tee /tmp/plan.txt
+
+      - name: Extract plan summary
+        id: plan-summary
+        if: always()
+        run: |
+          SUMMARY=$(tail -40 /tmp/plan.txt | head -35)
+          {
+            echo "summary<<EOFPLAN"
+            echo "$SUMMARY"
+            echo "EOFPLAN"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Write Terraform Plan to job summary
         if: always()
@@ -240,6 +265,35 @@ jobs:
               json.dump(result, f)
           PYEOF
 
+      - name: Format cost for approval issue
+        id: cost-format
+        run: |
+          python3 - << 'PYEOF'
+          import json, os
+
+          data = json.load(open("/tmp/cost.json"))
+          lines = []
+          lines.append(f"> {data['region']} · {data['node_count']}x {data['instance_type']} nodes · on-demand pricing")
+          lines.append("")
+          lines.append("| Period | Estimated Cost |")
+          lines.append("|--------|---------------|")
+          lines.append(f"| Daily | **${data['total_daily']:.2f}** |")
+          lines.append(f"| Monthly | **${data['total_monthly']:.2f}** |")
+          lines.append("")
+          lines.append("| Resource | Daily | Monthly |")
+          lines.append("|----------|------:|--------:|")
+          for i in data["items"]:
+              if i["monthly"] > 0:
+                  lines.append(f"| {i['label']} | ${i['daily']:.2f} | ${i['monthly']:.2f} |")
+          lines.append(f"| **Total** | **${data['total_daily']:.2f}** | **${data['total_monthly']:.2f}** |")
+          table = "\n".join(lines)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("table<<EOFCOST\n")
+              f.write(table + "\n")
+              f.write("EOFCOST\n")
+          PYEOF
+
       - name: Write cost estimate to job summary
         if: always()
         run: |
@@ -268,35 +322,44 @@ jobs:
           PYEOF
           cat /tmp/cost_summary.md >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Approval gate before Terraform apply ──────────────────────────────────
+  # ── Single approval gate with plan + cost in the issue ───────────────────────
   approve-terraform:
-    name: Approve Terraform Apply
+    name: Approve Terraform & Deploy
     runs-on: ubuntu-latest
-    needs: terraform-plan
+    needs: [terraform-plan, build-and-push]
     steps:
       - uses: trstringer/manual-approval@v1
         with:
           secret: ${{ secrets.GITHUB_TOKEN }}
           approvers: ShrithikShahapure
           minimum-approvals: 1
-          issue-title: "Approve Terraform Apply — ${{ github.sha }}"
+          issue-title: "Approve Terraform Apply & Deploy — ${{ github.sha }}"
           issue-body: |
-            Terraform plan is ready for apply.
+            ## Terraform Plan
 
-            **Commit:** ${{ github.sha }}
-            **Image tag:** ${{ needs.build-and-push.outputs.image_tag }}
+            ```
+            ${{ needs.terraform-plan.outputs.plan_summary }}
+            ```
 
-            Review the Terraform plan and cost estimate in the
-            [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+            ## Cost Estimate
 
-            **Approve** this issue to run `terraform apply`, or **close** to cancel.
+            ${{ needs.terraform-plan.outputs.cost_table }}
+
+            ---
+
+            **Commit:** `${{ github.sha }}`
+            **Image tag:** `${{ needs.build-and-push.outputs.image_tag }}`
+
+            Full plan details: [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            **Approve** this issue to run `terraform apply` and deploy to EKS, or **close** to cancel.
           exclude-workflow-initiator-as-approver: false
 
-  # ── Terraform apply (only after approval) ─────────────────────────────────
+  # ── Terraform apply (only after approval) ────────────────────────────────────
   terraform-apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
-    needs: [build-and-push, approve-terraform]
+    needs: [approve-terraform, build-and-push]
     outputs:
       cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
     steps:
@@ -325,35 +388,11 @@ jobs:
           CLUSTER=$(terraform -chdir=terraform output -raw cluster_name)
           echo "cluster_name=${CLUSTER}" >> "$GITHUB_OUTPUT"
 
-  # ── Approval gate before EKS deployment ──────────────────────────────────
-  approve-deploy:
-    name: Approve EKS Deployment
-    runs-on: ubuntu-latest
-    needs: terraform-apply
-    steps:
-      - uses: trstringer/manual-approval@v1
-        with:
-          secret: ${{ secrets.GITHUB_TOKEN }}
-          approvers: ShrithikShahapure
-          minimum-approvals: 1
-          issue-title: "Deploy to EKS — ${{ github.sha }}"
-          issue-body: |
-            Terraform apply completed. Deployment is ready for EKS.
-
-            **Commit:** ${{ github.sha }}
-            **Image tag:** ${{ needs.build-and-push.outputs.image_tag }}
-
-            Review the workflow run summary at
-            [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
-
-            **Approve** this issue to deploy to EKS, or **close** to cancel.
-          exclude-workflow-initiator-as-approver: false
-
-  # ── Deploy to EKS (two-pass: API first, then frontend with real URL) ───────
+  # ── Deploy to EKS (two-pass: API first, then frontend with real URL) ─────────
   deploy-to-eks:
     name: Deploy to EKS
     runs-on: ubuntu-latest
-    needs: [build-and-push, terraform-apply, approve-deploy]
+    needs: [build-and-push, terraform-apply]
     env:
       SHA: ${{ needs.build-and-push.outputs.image_tag }}
       CLUSTER_NAME: ${{ needs.terraform-apply.outputs.cluster_name }}
