@@ -4,8 +4,8 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /build
 
-# Install git for go mod download
-RUN apk add --no-cache git
+# Apply security patches and install git for go mod download
+RUN apk upgrade --no-cache && apk add --no-cache git
 
 # Copy go mod files first for caching
 COPY go.mod go.sum ./
@@ -23,8 +23,8 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies and apply all security patches
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
     git \
     curl \
