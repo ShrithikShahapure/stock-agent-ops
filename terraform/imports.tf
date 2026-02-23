@@ -200,11 +200,11 @@ import {
 
 # EKS access entries
 import {
-  id = "stock-agent-ops#arn:aws:iam::075223871157:role/github-actions-ci-role"
+  id = "stock-agent-ops:arn:aws:iam::075223871157:role/github-actions-ci-role"
   to = module.eks.aws_eks_access_entry.ci
 }
 
 import {
-  id = "stock-agent-ops#arn:aws:iam::075223871157:role/github-actions-ci-role#arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy#cluster"
+  id = "stock-agent-ops#arn:aws:iam::075223871157:role/github-actions-ci-role#arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   to = module.eks.aws_eks_access_policy_association.ci_admin
 }
