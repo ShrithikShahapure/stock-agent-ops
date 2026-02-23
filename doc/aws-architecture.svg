@@ -1,0 +1,493 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1240 2480" width="1240" height="2480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#8b949e"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#58a6ff"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3fb950"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#f0883e"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#bc8cff"/>
+    </marker>
+    <linearGradient id="vpcGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#161b22"/>
+      <stop offset="100%" stop-color="#0d1117"/>
+    </linearGradient>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <!-- ── Full background ── -->
+  <rect width="1240" height="2480" fill="#0d1117"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TITLE
+       ══════════════════════════════════════════════════════════════════════ -->
+  <text x="620" y="40" text-anchor="middle" fill="#f0f6fc" font-size="26" font-weight="700">AWS Architecture — Stock Agent Ops</text>
+  <text x="620" y="62" text-anchor="middle" fill="#8b949e" font-size="13">EKS-based MLOps platform · us-east-1 · Terraform-managed · GitHub Actions CI/CD</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       EXTERNAL LAYER: GitHub + Users
+       ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- GitHub Actions -->
+  <rect x="40" y="90" width="340" height="110" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="210" y="116" text-anchor="middle" fill="#f0f6fc" font-size="14" font-weight="700">GitHub Actions CI/CD</text>
+  <text x="210" y="138" text-anchor="middle" fill="#8b949e" font-size="11">OIDC Federation → STS AssumeRole</text>
+  <text x="210" y="156" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="600">github-actions-ci-role</text>
+  <text x="210" y="174" text-anchor="middle" fill="#8b949e" font-size="10">ECR push · EKS deploy · S3/DynamoDB (TF state)</text>
+
+  <!-- Users / Browser -->
+  <rect x="860" y="90" width="340" height="110" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="1030" y="116" text-anchor="middle" fill="#f0f6fc" font-size="14" font-weight="700">Users (Browser)</text>
+  <text x="1030" y="138" text-anchor="middle" fill="#8b949e" font-size="11">React SPA · Plotly charts · LLM reports</text>
+  <text x="1030" y="160" text-anchor="middle" fill="#58a6ff" font-size="11">frontend-alb:8501</text>
+  <text x="1030" y="178" text-anchor="middle" fill="#58a6ff" font-size="11">api-alb:8000 · grafana-alb:3000</text>
+
+  <!-- OIDC arrow -->
+  <line x1="210" y1="200" x2="210" y2="256" stroke="#bc8cff" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arrow-purple)"/>
+  <text x="218" y="232" fill="#bc8cff" font-size="10">OIDC</text>
+
+  <!-- User arrow to ALB -->
+  <line x1="1030" y1="200" x2="1030" y2="256" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <text x="1038" y="232" fill="#58a6ff" font-size="10">HTTPS</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       AWS CLOUD BOUNDARY
+       ══════════════════════════════════════════════════════════════════════ -->
+  <rect x="20" y="256" width="1200" height="1300" rx="12" fill="none" stroke="#f0883e" stroke-width="2" stroke-dasharray="8,4"/>
+  <rect x="24" y="256" width="160" height="24" rx="4" fill="#f0883e"/>
+  <text x="104" y="273" text-anchor="middle" fill="#0d1117" font-size="12" font-weight="700">AWS Cloud (us-east-1)</text>
+
+  <!-- ── IAM / STS / OIDC ── -->
+  <rect x="40" y="296" width="280" height="72" rx="6" fill="#21262d" stroke="#bc8cff" stroke-dasharray="4,2"/>
+  <text x="180" y="318" text-anchor="middle" fill="#bc8cff" font-size="12" font-weight="700">IAM &amp; OIDC Federation</text>
+  <text x="180" y="336" text-anchor="middle" fill="#8b949e" font-size="10">GitHub OIDC Provider</text>
+  <text x="180" y="352" text-anchor="middle" fill="#8b949e" font-size="10">Terraform Cloud OIDC Provider</text>
+
+  <!-- ── S3 + DynamoDB ── -->
+  <rect x="900" y="296" width="300" height="72" rx="6" fill="#21262d" stroke="#3fb950" stroke-dasharray="4,2"/>
+  <text x="1050" y="318" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">Terraform State</text>
+  <text x="1050" y="336" text-anchor="middle" fill="#8b949e" font-size="10">S3: stock-agent-ops-tfstate (encrypted)</text>
+  <text x="1050" y="352" text-anchor="middle" fill="#8b949e" font-size="10">DynamoDB: stock-agent-ops-tflock</text>
+
+  <!-- ── ECR ── -->
+  <rect x="440" y="296" width="360" height="72" rx="6" fill="#21262d" stroke="#f0883e" stroke-dasharray="4,2"/>
+  <text x="620" y="318" text-anchor="middle" fill="#f0883e" font-size="12" font-weight="700">ECR (Elastic Container Registry)</text>
+  <text x="620" y="336" text-anchor="middle" fill="#8b949e" font-size="10">stock-agent-ops/api · stock-agent-ops/frontend</text>
+  <text x="620" y="352" text-anchor="middle" fill="#8b949e" font-size="10">Scan on push · Lifecycle: keep 10 tagged, expire untagged 1d</text>
+
+  <!-- Connectors: GH Actions → IAM, ECR, S3 -->
+  <line x1="150" y1="368" x2="150" y2="390" stroke="#bc8cff" stroke-width="1" stroke-dasharray="4,2"/>
+  <path d="M 320 340 L 440 340" stroke="#f0883e" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arrow-orange)" fill="none"/>
+  <path d="M 320 320 L 400 320 L 400 300 L 880 300 L 880 330 L 900 330" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arrow-green)" fill="none"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       VPC BOUNDARY
+       ══════════════════════════════════════════════════════════════════════ -->
+  <rect x="40" y="390" width="1160" height="1146" rx="10" fill="url(#vpcGrad)" stroke="#58a6ff" stroke-width="2"/>
+  <rect x="44" y="390" width="200" height="24" rx="4" fill="#1f6feb"/>
+  <text x="144" y="407" text-anchor="middle" fill="#f0f6fc" font-size="12" font-weight="700">VPC — 10.0.0.0/16</text>
+
+  <!-- Internet Gateway -->
+  <rect x="520" y="400" width="200" height="36" rx="6" fill="#21262d" stroke="#58a6ff"/>
+  <text x="620" y="423" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">Internet Gateway</text>
+
+  <!-- ── PUBLIC SUBNETS ── -->
+  <rect x="60" y="456" width="540" height="168" rx="8" fill="none" stroke="#3fb950" stroke-dasharray="4,2"/>
+  <rect x="64" y="456" width="230" height="20" rx="3" fill="#238636"/>
+  <text x="179" y="470" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">Public Subnet — AZ-a (10.0.0.0/24)</text>
+
+  <rect x="620" y="456" width="560" height="168" rx="8" fill="none" stroke="#3fb950" stroke-dasharray="4,2"/>
+  <rect x="624" y="456" width="230" height="20" rx="3" fill="#238636"/>
+  <text x="739" y="470" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">Public Subnet — AZ-b (10.0.1.0/24)</text>
+
+  <!-- NAT Gateway -->
+  <rect x="80" y="492" width="200" height="56" rx="6" fill="#21262d" stroke="#d29922"/>
+  <text x="180" y="514" text-anchor="middle" fill="#d29922" font-size="12" font-weight="600">NAT Gateway</text>
+  <text x="180" y="532" text-anchor="middle" fill="#8b949e" font-size="10">Elastic IP (static)</text>
+
+  <!-- AWS Load Balancers -->
+  <rect x="320" y="492" width="260" height="116" rx="6" fill="#21262d" stroke="#58a6ff"/>
+  <text x="450" y="514" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">Elastic Load Balancers</text>
+  <text x="450" y="534" text-anchor="middle" fill="#8b949e" font-size="10">Auto-provisioned by K8s type: LoadBalancer</text>
+
+  <rect x="334" y="548" width="100" height="26" rx="4" fill="#1f6feb22" stroke="#58a6ff" stroke-width="0.5"/>
+  <text x="384" y="566" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">API :8000</text>
+
+  <rect x="446" y="548" width="120" height="26" rx="4" fill="#1f6feb22" stroke="#58a6ff" stroke-width="0.5"/>
+  <text x="506" y="566" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">Frontend :8501</text>
+
+  <rect x="334" y="580" width="120" height="26" rx="4" fill="#1f6feb22" stroke="#58a6ff" stroke-width="0.5"/>
+  <text x="394" y="598" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">Grafana :3000</text>
+
+  <!-- ALB from user -->
+  <line x1="1030" y1="256" x2="1030" y2="420" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,2"/>
+  <path d="M 1030 420 L 1030 460 L 580 550" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow-blue)" fill="none"/>
+
+  <!-- IGW to ALBs -->
+  <line x1="620" y1="436" x2="620" y2="456" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="450" y1="456" x2="450" y2="492" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- IGW to NAT -->
+  <path d="M 540 418 L 280 418 L 280 492" stroke="#d29922" stroke-width="1" stroke-dasharray="3,2" fill="none"/>
+
+  <!-- Route tables -->
+  <rect x="640" y="492" width="200" height="44" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="740" y="512" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">Route Tables</text>
+  <text x="740" y="528" text-anchor="middle" fill="#8b949e" font-size="10">Public: 0.0.0.0/0 → IGW</text>
+
+  <rect x="640" y="548" width="200" height="30" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="740" y="568" text-anchor="middle" fill="#8b949e" font-size="10">Private: 0.0.0.0/0 → NAT GW</text>
+
+  <!-- K8s subnet tags -->
+  <rect x="860" y="492" width="300" height="86" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="1010" y="512" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">Subnet Tags (K8s integration)</text>
+  <text x="1010" y="530" text-anchor="middle" fill="#8b949e" font-size="10">kubernetes.io/cluster/stock-agent-ops: shared</text>
+  <text x="1010" y="546" text-anchor="middle" fill="#3fb950" font-size="10">Public: kubernetes.io/role/elb = 1</text>
+  <text x="1010" y="562" text-anchor="middle" fill="#d29922" font-size="10">Private: kubernetes.io/role/internal-elb = 1</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       PRIVATE SUBNETS + EKS
+       ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Private Subnet AZ-a -->
+  <rect x="60" y="644" width="560" height="872" rx="8" fill="none" stroke="#d29922" stroke-dasharray="4,2"/>
+  <rect x="64" y="644" width="240" height="20" rx="3" fill="#9e6a03"/>
+  <text x="184" y="658" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">Private Subnet — AZ-a (10.0.10.0/24)</text>
+
+  <!-- Private Subnet AZ-b -->
+  <rect x="640" y="644" width="540" height="872" rx="8" fill="none" stroke="#d29922" stroke-dasharray="4,2"/>
+  <rect x="644" y="644" width="240" height="20" rx="3" fill="#9e6a03"/>
+  <text x="764" y="658" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">Private Subnet — AZ-b (10.0.11.0/24)</text>
+
+  <!-- NAT to Private arrow -->
+  <line x1="180" y1="548" x2="180" y2="644" stroke="#d29922" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="188" y="600" fill="#d29922" font-size="9">Outbound</text>
+
+  <!-- ALBs to Private arrow -->
+  <line x1="450" y1="608" x2="450" y2="644" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-blue)"/>
+
+  <!-- ── EKS CONTROL PLANE ── -->
+  <rect x="240" y="680" width="760" height="60" rx="8" fill="#21262d" stroke="#bc8cff" stroke-width="1.5"/>
+  <text x="620" y="704" text-anchor="middle" fill="#bc8cff" font-size="14" font-weight="700">EKS Control Plane — stock-agent-ops (v1.31)</text>
+  <text x="620" y="724" text-anchor="middle" fill="#8b949e" font-size="10">API: public + private access · Logging: api, audit, authenticator · Role: AmazonEKSClusterPolicy</text>
+
+  <!-- EKS Addons -->
+  <rect x="80" y="680" width="140" height="60" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="150" y="702" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">EKS Addons</text>
+  <text x="150" y="718" text-anchor="middle" fill="#8b949e" font-size="9">vpc-cni · coredns</text>
+  <text x="150" y="730" text-anchor="middle" fill="#8b949e" font-size="9">kube-proxy · ebs-csi</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       EKS NODE 1 (AZ-a)
+       ══════════════════════════════════════════════════════════════════════ -->
+  <rect x="76" y="760" width="530" height="740" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1"/>
+  <text x="341" y="784" text-anchor="middle" fill="#f0f6fc" font-size="13" font-weight="700">EKS Worker Node 1 (m5.xlarge)</text>
+  <text x="341" y="800" text-anchor="middle" fill="#8b949e" font-size="10">4 vCPU · 16 GiB · 50 GB gp2 EBS · Amazon Linux 2</text>
+
+  <!-- API Pod -->
+  <rect x="96" y="820" width="240" height="120" rx="6" fill="#21262d" stroke="#58a6ff"/>
+  <text x="216" y="844" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="700">API (Go + Chi)</text>
+  <text x="216" y="862" text-anchor="middle" fill="#8b949e" font-size="10">:8000 · ECR image</text>
+  <text x="216" y="882" text-anchor="middle" fill="#8b949e" font-size="10">Calls Python ML via subprocess</text>
+  <text x="216" y="898" text-anchor="middle" fill="#8b949e" font-size="10">scripts/ml_cli.py</text>
+  <rect x="108" y="908" width="72" height="18" rx="3" fill="#238636" stroke="none"/>
+  <text x="144" y="921" text-anchor="middle" fill="#f0f6fc" font-size="9" font-weight="600">Ready</text>
+  <rect x="188" y="908" width="72" height="18" rx="3" fill="#238636" stroke="none"/>
+  <text x="224" y="921" text-anchor="middle" fill="#f0f6fc" font-size="9" font-weight="600">Live</text>
+  <text x="276" y="922" fill="#8b949e" font-size="9">/health</text>
+  <text x="216" y="938" text-anchor="middle" fill="#8b949e" font-size="9">req: 500m CPU, 1Gi · lim: 1 CPU, 2Gi</text>
+
+  <!-- Frontend Pod -->
+  <rect x="352" y="820" width="240" height="100" rx="6" fill="#21262d" stroke="#3fb950"/>
+  <text x="472" y="844" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="700">Frontend (React + nginx)</text>
+  <text x="472" y="862" text-anchor="middle" fill="#8b949e" font-size="10">:8501 · ECR image</text>
+  <text x="472" y="882" text-anchor="middle" fill="#8b949e" font-size="10">API_URL injected at deploy</text>
+  <text x="472" y="902" text-anchor="middle" fill="#8b949e" font-size="10">Healthcheck: /healthz</text>
+  <text x="472" y="918" text-anchor="middle" fill="#8b949e" font-size="9">req: 50m CPU, 64Mi · lim: 200m, 128Mi</text>
+
+  <!-- Llama Pod -->
+  <rect x="96" y="960" width="240" height="100" rx="6" fill="#21262d" stroke="#f0883e"/>
+  <text x="216" y="984" text-anchor="middle" fill="#f0883e" font-size="13" font-weight="700">Llama.cpp Server</text>
+  <text x="216" y="1002" text-anchor="middle" fill="#8b949e" font-size="10">:8080 · OpenAI-compatible API</text>
+  <text x="216" y="1020" text-anchor="middle" fill="#8b949e" font-size="10">Qwen3 7B (GGUF) · /v1/*</text>
+  <text x="216" y="1038" text-anchor="middle" fill="#8b949e" font-size="9">req: 2 CPU, 4Gi · lim: 4 CPU, 8Gi</text>
+
+  <!-- Redis Pod -->
+  <rect x="352" y="960" width="240" height="100" rx="6" fill="#21262d" stroke="#f85149"/>
+  <text x="472" y="984" text-anchor="middle" fill="#f85149" font-size="13" font-weight="700">Redis Stack</text>
+  <text x="472" y="1002" text-anchor="middle" fill="#8b949e" font-size="10">:6379 · ClusterIP</text>
+  <text x="472" y="1020" text-anchor="middle" fill="#8b949e" font-size="10">task_status:* · predict_child_*</text>
+  <text x="472" y="1038" text-anchor="middle" fill="#8b949e" font-size="9">req: 100m, 256Mi · lim: 200m, 512Mi</text>
+
+  <!-- Qdrant Pod -->
+  <rect x="96" y="1080" width="240" height="90" rx="6" fill="#21262d" stroke="#bc8cff"/>
+  <text x="216" y="1104" text-anchor="middle" fill="#bc8cff" font-size="13" font-weight="700">Qdrant</text>
+  <text x="216" y="1122" text-anchor="middle" fill="#8b949e" font-size="10">:6333 · ClusterIP</text>
+  <text x="216" y="1140" text-anchor="middle" fill="#8b949e" font-size="10">Semantic cache (embeddings)</text>
+  <text x="216" y="1156" text-anchor="middle" fill="#8b949e" font-size="9">req: 200m, 512Mi · lim: 500m, 1Gi</text>
+
+  <!-- Prometheus Pod -->
+  <rect x="352" y="1080" width="240" height="90" rx="6" fill="#21262d" stroke="#d29922"/>
+  <text x="472" y="1104" text-anchor="middle" fill="#d29922" font-size="13" font-weight="700">Prometheus</text>
+  <text x="472" y="1122" text-anchor="middle" fill="#8b949e" font-size="10">:9090 · ClusterIP</text>
+  <text x="472" y="1140" text-anchor="middle" fill="#8b949e" font-size="10">Scrapes /metrics (5s interval)</text>
+  <text x="472" y="1156" text-anchor="middle" fill="#8b949e" font-size="9">req: 100m, 256Mi · lim: 300m, 512Mi</text>
+
+  <!-- Grafana Pod -->
+  <rect x="96" y="1190" width="240" height="90" rx="6" fill="#21262d" stroke="#39d2c0"/>
+  <text x="216" y="1214" text-anchor="middle" fill="#39d2c0" font-size="13" font-weight="700">Grafana</text>
+  <text x="216" y="1232" text-anchor="middle" fill="#8b949e" font-size="10">:3000 · LoadBalancer</text>
+  <text x="216" y="1250" text-anchor="middle" fill="#8b949e" font-size="10">Dashboards · Alerts (Slack/SNS)</text>
+  <text x="216" y="1266" text-anchor="middle" fill="#8b949e" font-size="9">req: 100m, 256Mi · lim: 200m, 512Mi</text>
+
+  <!-- ── Connection arrows inside node ── -->
+  <line x1="216" y1="940" x2="216" y2="960" stroke="#f0883e" stroke-width="1" marker-end="url(#arrow-orange)"/>
+  <path d="M 336 890 L 352 890 L 352 960" stroke="#f85149" stroke-width="1" marker-end="url(#arrow)" fill="none"/>
+  <path d="M 148 940 L 148 1080" stroke="#bc8cff" stroke-width="1" marker-end="url(#arrow-purple)" fill="none"/>
+  <path d="M 352 1120 L 336 1120 L 336 938" stroke="#d29922" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrow)" fill="none"/>
+  <path d="M 336 1230 L 352 1120" stroke="#39d2c0" stroke-width="1" stroke-dasharray="3,2" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ── EBS VOLUMES ── -->
+  <rect x="96" y="1300" width="496" height="186" rx="6" fill="#0d1117" stroke="#d29922" stroke-dasharray="4,2"/>
+  <text x="344" y="1324" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">EBS Volumes (PersistentVolumeClaims)</text>
+
+  <rect x="110" y="1340" width="220" height="40" rx="4" fill="#21262d" stroke="#30363d"/>
+  <text x="220" y="1358" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">mlops-outputs-pvc</text>
+  <text x="220" y="1372" text-anchor="middle" fill="#8b949e" font-size="9">2 GiB · RWO · Models + reports</text>
+
+  <rect x="350" y="1340" width="220" height="40" rx="4" fill="#21262d" stroke="#30363d"/>
+  <text x="460" y="1358" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">redis-data-pvc</text>
+  <text x="460" y="1372" text-anchor="middle" fill="#8b949e" font-size="9">1 GiB · RWO · Redis AOF</text>
+
+  <rect x="110" y="1392" width="220" height="40" rx="4" fill="#21262d" stroke="#30363d"/>
+  <text x="220" y="1410" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">qdrant-storage-pvc</text>
+  <text x="220" y="1424" text-anchor="middle" fill="#8b949e" font-size="9">1 GiB · RWO · Vector DB</text>
+
+  <rect x="350" y="1392" width="220" height="40" rx="4" fill="#21262d" stroke="#30363d"/>
+  <text x="460" y="1410" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">llama-models-pvc</text>
+  <text x="460" y="1424" text-anchor="middle" fill="#8b949e" font-size="9">20 GiB · ROX · Qwen3 GGUF</text>
+
+  <text x="344" y="1472" text-anchor="middle" fill="#8b949e" font-size="9">StorageClass: gp2 (default) · aws-ebs-csi-driver</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       EKS NODE 2 (AZ-b)
+       ══════════════════════════════════════════════════════════════════════ -->
+  <rect x="656" y="760" width="510" height="370" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1"/>
+  <text x="911" y="784" text-anchor="middle" fill="#f0f6fc" font-size="13" font-weight="700">EKS Worker Node 2 (m5.xlarge)</text>
+  <text x="911" y="800" text-anchor="middle" fill="#8b949e" font-size="10">4 vCPU · 16 GiB · 50 GB gp2 EBS · Amazon Linux 2</text>
+
+  <rect x="676" y="820" width="470" height="100" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="911" y="846" text-anchor="middle" fill="#8b949e" font-size="12" font-weight="600">Replica / Overflow Scheduling</text>
+  <text x="911" y="868" text-anchor="middle" fill="#8b949e" font-size="10">K8s scheduler distributes pods across nodes</text>
+  <text x="911" y="886" text-anchor="middle" fill="#8b949e" font-size="10">Auto-scaling: min 2, max 4 nodes</text>
+  <text x="911" y="904" text-anchor="middle" fill="#8b949e" font-size="10">Label: role=worker</text>
+
+  <!-- Security Groups -->
+  <rect x="676" y="940" width="470" height="80" rx="6" fill="#21262d" stroke="#f85149" stroke-dasharray="4,2"/>
+  <text x="911" y="964" text-anchor="middle" fill="#f85149" font-size="12" font-weight="600">Security Groups</text>
+  <text x="911" y="984" text-anchor="middle" fill="#8b949e" font-size="10">Cluster SG: outbound all · Node SG: node-to-node all, CP → node TCP 1025-65535</text>
+  <text x="911" y="1002" text-anchor="middle" fill="#8b949e" font-size="10">Outbound: 0.0.0.0/0 (via NAT Gateway)</text>
+
+  <!-- EKS Access -->
+  <rect x="676" y="1040" width="470" height="76" rx="6" fill="#21262d" stroke="#bc8cff" stroke-dasharray="4,2"/>
+  <text x="911" y="1064" text-anchor="middle" fill="#bc8cff" font-size="12" font-weight="600">EKS Access Entry</text>
+  <text x="911" y="1084" text-anchor="middle" fill="#8b949e" font-size="10">Principal: github-actions-ci-role</text>
+  <text x="911" y="1100" text-anchor="middle" fill="#8b949e" font-size="10">Policy: AmazonEKSClusterAdminPolicy (cluster-wide)</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       CD PIPELINE (bottom-right)
+       ══════════════════════════════════════════════════════════════════════ -->
+  <rect x="656" y="1140" width="510" height="346" rx="8" fill="#161b22" stroke="#f0883e" stroke-width="1"/>
+  <text x="911" y="1166" text-anchor="middle" fill="#f0883e" font-size="13" font-weight="700">CD Pipeline (push to main)</text>
+
+  <rect x="676" y="1180" width="120" height="32" rx="4" fill="#f8514922" stroke="#f85149" stroke-width="0.5"/>
+  <text x="736" y="1201" text-anchor="middle" fill="#f85149" font-size="10" font-weight="600">Security Scan</text>
+
+  <line x1="796" y1="1196" x2="812" y2="1196" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="820" y="1178" width="100" height="18" rx="3" fill="#3fb95022" stroke="#3fb950" stroke-width="0.5"/>
+  <text x="870" y="1191" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">Test Go</text>
+  <rect x="820" y="1198" width="100" height="18" rx="3" fill="#3fb95022" stroke="#3fb950" stroke-width="0.5"/>
+  <text x="870" y="1211" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">Test Frontend</text>
+
+  <line x1="920" y1="1196" x2="936" y2="1196" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="944" y="1180" width="100" height="32" rx="4" fill="#58a6ff22" stroke="#58a6ff" stroke-width="0.5"/>
+  <text x="994" y="1201" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">Build &amp; Push</text>
+
+  <line x1="994" y1="1212" x2="994" y2="1232" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="676" y="1232" width="160" height="32" rx="4" fill="#bc8cff22" stroke="#bc8cff" stroke-width="0.5"/>
+  <text x="756" y="1253" text-anchor="middle" fill="#bc8cff" font-size="10" font-weight="600">Terraform Plan &amp; Apply</text>
+
+  <line x1="836" y1="1248" x2="860" y2="1248" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="868" y="1232" width="120" height="32" rx="4" fill="#d2992222" stroke="#d29922" stroke-width="0.5"/>
+  <text x="928" y="1253" text-anchor="middle" fill="#d29922" font-size="10" font-weight="600">Manual Approval</text>
+
+  <line x1="988" y1="1248" x2="1008" y2="1248" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="1016" y="1232" width="130" height="32" rx="4" fill="#3fb95022" stroke="#3fb950" stroke-width="0.5"/>
+  <text x="1081" y="1253" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">Deploy to EKS</text>
+
+  <path d="M 994 1232 L 836 1248" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,2" fill="none"/>
+
+  <!-- Deploy detail -->
+  <rect x="676" y="1280" width="470" height="190" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="911" y="1304" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">Two-Pass EKS Deployment</text>
+
+  <text x="696" y="1328" fill="#58a6ff" font-size="11" font-weight="600">Pass 1: Infrastructure + API</text>
+  <text x="696" y="1346" fill="#8b949e" font-size="10">kubectl apply: redis, qdrant, volumes, prometheus, grafana, llama</text>
+  <text x="696" y="1362" fill="#8b949e" font-size="10">kustomize build k8s/overlays/aws → API deployment with ECR image</text>
+  <text x="696" y="1378" fill="#8b949e" font-size="10">Wait for API LoadBalancer hostname (30 retries x 10s)</text>
+
+  <text x="696" y="1402" fill="#3fb950" font-size="11" font-weight="600">Pass 2: Frontend with real API URL</text>
+  <text x="696" y="1420" fill="#8b949e" font-size="10">Inject ALB hostname into frontend-patch.yaml (replaces placeholder)</text>
+  <text x="696" y="1436" fill="#8b949e" font-size="10">kubectl set image deployment/frontend → ECR frontend image</text>
+  <text x="696" y="1452" fill="#8b949e" font-size="10">Rollout status + smoke test (curl /health)</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       LEGEND SECTION
+       ══════════════════════════════════════════════════════════════════════ -->
+  <line x1="40" y1="1580" x2="1200" y2="1580" stroke="#30363d" stroke-width="1"/>
+  <text x="620" y="1614" text-anchor="middle" fill="#f0f6fc" font-size="18" font-weight="700">Component Details</text>
+
+  <!-- Card 1: API -->
+  <rect x="40" y="1640" width="380" height="190" rx="8" fill="#161b22" stroke="#30363d"/>
+  <circle cx="60" cy="1664" r="5" fill="#58a6ff"/>
+  <text x="72" y="1669" fill="#58a6ff" font-size="13" font-weight="700">API Service (Go)</text>
+  <text x="60" y="1692" fill="#c9d1d9" font-size="11">· Chi router serving 18 endpoints on :8000</text>
+  <text x="60" y="1710" fill="#c9d1d9" font-size="11">· Python ML via scripts/ml_cli.py subprocess</text>
+  <text x="60" y="1728" fill="#c9d1d9" font-size="11">· Redis: task_status:* + predict_child_* (24h TTL)</text>
+  <text x="60" y="1746" fill="#c9d1d9" font-size="11">· Qdrant: LangGraph semantic cache</text>
+  <text x="60" y="1764" fill="#c9d1d9" font-size="11">· Llama.cpp: Qwen3 7B (OpenAI-compat)</text>
+  <text x="60" y="1782" fill="#c9d1d9" font-size="11">· Prometheus metrics at /metrics</text>
+
+  <!-- Card 2: Frontend -->
+  <rect x="430" y="1640" width="380" height="190" rx="8" fill="#161b22" stroke="#30363d"/>
+  <circle cx="450" cy="1664" r="5" fill="#3fb950"/>
+  <text x="462" y="1669" fill="#3fb950" font-size="13" font-weight="700">Frontend (React SPA)</text>
+  <text x="450" y="1692" fill="#c9d1d9" font-size="11">· React 19 + Vite 6 + TypeScript + Tailwind v4</text>
+  <text x="450" y="1710" fill="#c9d1d9" font-size="11">· nginx on :8501 with SPA fallback + /healthz</text>
+  <text x="450" y="1728" fill="#c9d1d9" font-size="11">· API_URL injected via docker-entrypoint.sh</text>
+  <text x="450" y="1746" fill="#c9d1d9" font-size="11">· Routes: /analyze (stock) + /monitor (drift)</text>
+  <text x="450" y="1764" fill="#c9d1d9" font-size="11">· CD discovers ALB hostname, patches K8s manifest</text>
+
+  <!-- Card 3: Llama -->
+  <rect x="820" y="1640" width="380" height="190" rx="8" fill="#161b22" stroke="#30363d"/>
+  <circle cx="840" cy="1664" r="5" fill="#f0883e"/>
+  <text x="852" y="1669" fill="#f0883e" font-size="13" font-weight="700">Llama.cpp LLM Server</text>
+  <text x="840" y="1692" fill="#c9d1d9" font-size="11">· OpenAI-compatible API on :8080/v1/*</text>
+  <text x="840" y="1710" fill="#c9d1d9" font-size="11">· Default: Qwen3 7B (GGUF quantized)</text>
+  <text x="840" y="1728" fill="#c9d1d9" font-size="11">· Alt: Gemma 3 via LLM_MODEL env</text>
+  <text x="840" y="1746" fill="#c9d1d9" font-size="11">· 20 GiB PVC (ReadOnlyMany)</text>
+  <text x="840" y="1764" fill="#c9d1d9" font-size="11">· Resource-heavy: 2-4 CPU, 4-8 GiB RAM</text>
+
+  <!-- Card 4: IAM -->
+  <rect x="40" y="1845" width="380" height="190" rx="8" fill="#161b22" stroke="#30363d"/>
+  <circle cx="60" cy="1869" r="5" fill="#bc8cff"/>
+  <text x="72" y="1874" fill="#bc8cff" font-size="13" font-weight="700">IAM &amp; Security</text>
+  <text x="60" y="1897" fill="#c9d1d9" font-size="11">· GitHub Actions: OIDC, no static credentials</text>
+  <text x="60" y="1915" fill="#c9d1d9" font-size="11">· CI role: ECR push, EKS deploy, S3/DynamoDB</text>
+  <text x="60" y="1933" fill="#c9d1d9" font-size="11">· TF Cloud role: AdministratorAccess</text>
+  <text x="60" y="1951" fill="#c9d1d9" font-size="11">· EKS Access: CI role → cluster-admin</text>
+  <text x="60" y="1969" fill="#c9d1d9" font-size="11">· ECR: scan-on-push, lifecycle policies</text>
+
+  <!-- Card 5: Networking -->
+  <rect x="430" y="1845" width="380" height="190" rx="8" fill="#161b22" stroke="#30363d"/>
+  <circle cx="450" cy="1869" r="5" fill="#d29922"/>
+  <text x="462" y="1874" fill="#d29922" font-size="13" font-weight="700">Networking</text>
+  <text x="450" y="1897" fill="#c9d1d9" font-size="11">· VPC 10.0.0.0/16 across 2 AZs</text>
+  <text x="450" y="1915" fill="#c9d1d9" font-size="11">· Public: 10.0.0.0/24, 10.0.1.0/24 (IGW, ALBs)</text>
+  <text x="450" y="1933" fill="#c9d1d9" font-size="11">· Private: 10.0.10.0/24, 10.0.11.0/24 (nodes)</text>
+  <text x="450" y="1951" fill="#c9d1d9" font-size="11">· Single NAT GW + EIP (cost-optimized)</text>
+  <text x="450" y="1969" fill="#c9d1d9" font-size="11">· 3 LBs: API :8000, Frontend :8501, Grafana :3000</text>
+
+  <!-- Card 6: Data -->
+  <rect x="820" y="1845" width="380" height="190" rx="8" fill="#161b22" stroke="#30363d"/>
+  <circle cx="840" cy="1869" r="5" fill="#f85149"/>
+  <text x="852" y="1874" fill="#f85149" font-size="13" font-weight="700">Data &amp; Monitoring</text>
+  <text x="840" y="1897" fill="#c9d1d9" font-size="11">· Redis: task state, prediction cache (TTL)</text>
+  <text x="840" y="1915" fill="#c9d1d9" font-size="11">· Qdrant: semantic vector cache</text>
+  <text x="840" y="1933" fill="#c9d1d9" font-size="11">· Prometheus: scrapes /metrics 5s, 15d retention</text>
+  <text x="840" y="1951" fill="#c9d1d9" font-size="11">· Grafana: dashboards + alerts (Slack/SNS)</text>
+  <text x="840" y="1969" fill="#c9d1d9" font-size="11">· EBS gp2 via aws-ebs-csi-driver addon</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       COST TABLE
+       ══════════════════════════════════════════════════════════════════════ -->
+  <line x1="40" y1="2060" x2="1200" y2="2060" stroke="#30363d" stroke-width="1"/>
+  <text x="620" y="2094" text-anchor="middle" fill="#f0f6fc" font-size="18" font-weight="700">Estimated Monthly Cost (us-east-1, on-demand)</text>
+
+  <!-- Table header -->
+  <rect x="120" y="2116" width="1000" height="30" rx="4" fill="#21262d"/>
+  <text x="260" y="2136" text-anchor="middle" fill="#f0f6fc" font-size="12" font-weight="700">Resource</text>
+  <text x="520" y="2136" text-anchor="middle" fill="#f0f6fc" font-size="12" font-weight="700">Spec</text>
+  <text x="780" y="2136" text-anchor="middle" fill="#f0f6fc" font-size="12" font-weight="700">Hourly</text>
+  <text x="980" y="2136" text-anchor="middle" fill="#f0f6fc" font-size="12" font-weight="700">Monthly</text>
+
+  <!-- Rows -->
+  <rect x="120" y="2146" width="1000" height="30" rx="0" fill="#161b22"/>
+  <text x="260" y="2166" text-anchor="middle" fill="#c9d1d9" font-size="11">EKS Control Plane</text>
+  <text x="520" y="2166" text-anchor="middle" fill="#8b949e" font-size="11">Managed Kubernetes</text>
+  <text x="780" y="2166" text-anchor="middle" fill="#c9d1d9" font-size="11">$0.10</text>
+  <text x="980" y="2166" text-anchor="middle" fill="#c9d1d9" font-size="11">$73.00</text>
+
+  <line x1="120" y1="2176" x2="1120" y2="2176" stroke="#30363d" stroke-width="0.5"/>
+  <rect x="120" y="2176" width="1000" height="30" rx="0" fill="#0d1117"/>
+  <text x="260" y="2196" text-anchor="middle" fill="#c9d1d9" font-size="11">EC2 Instances</text>
+  <text x="520" y="2196" text-anchor="middle" fill="#8b949e" font-size="11">2x m5.xlarge (on-demand)</text>
+  <text x="780" y="2196" text-anchor="middle" fill="#c9d1d9" font-size="11">$0.384</text>
+  <text x="980" y="2196" text-anchor="middle" fill="#c9d1d9" font-size="11">$280.32</text>
+
+  <line x1="120" y1="2206" x2="1120" y2="2206" stroke="#30363d" stroke-width="0.5"/>
+  <rect x="120" y="2206" width="1000" height="30" rx="0" fill="#161b22"/>
+  <text x="260" y="2226" text-anchor="middle" fill="#c9d1d9" font-size="11">EBS Volumes (nodes)</text>
+  <text x="520" y="2226" text-anchor="middle" fill="#8b949e" font-size="11">2x 50 GB gp2</text>
+  <text x="780" y="2226" text-anchor="middle" fill="#c9d1d9" font-size="11">$0.014</text>
+  <text x="980" y="2226" text-anchor="middle" fill="#c9d1d9" font-size="11">$10.00</text>
+
+  <line x1="120" y1="2236" x2="1120" y2="2236" stroke="#30363d" stroke-width="0.5"/>
+  <rect x="120" y="2236" width="1000" height="30" rx="0" fill="#0d1117"/>
+  <text x="260" y="2256" text-anchor="middle" fill="#c9d1d9" font-size="11">EBS Volumes (PVCs)</text>
+  <text x="520" y="2256" text-anchor="middle" fill="#8b949e" font-size="11">~24 GB (outputs + redis + qdrant + models)</text>
+  <text x="780" y="2256" text-anchor="middle" fill="#c9d1d9" font-size="11">$0.003</text>
+  <text x="980" y="2256" text-anchor="middle" fill="#c9d1d9" font-size="11">$2.40</text>
+
+  <line x1="120" y1="2266" x2="1120" y2="2266" stroke="#30363d" stroke-width="0.5"/>
+  <rect x="120" y="2266" width="1000" height="30" rx="0" fill="#161b22"/>
+  <text x="260" y="2286" text-anchor="middle" fill="#c9d1d9" font-size="11">NAT Gateway</text>
+  <text x="520" y="2286" text-anchor="middle" fill="#8b949e" font-size="11">1x (AZ-a)</text>
+  <text x="780" y="2286" text-anchor="middle" fill="#c9d1d9" font-size="11">$0.045</text>
+  <text x="980" y="2286" text-anchor="middle" fill="#c9d1d9" font-size="11">$32.85</text>
+
+  <line x1="120" y1="2296" x2="1120" y2="2296" stroke="#30363d" stroke-width="0.5"/>
+  <rect x="120" y="2296" width="1000" height="30" rx="0" fill="#0d1117"/>
+  <text x="260" y="2316" text-anchor="middle" fill="#c9d1d9" font-size="11">Load Balancers</text>
+  <text x="520" y="2316" text-anchor="middle" fill="#8b949e" font-size="11">3x Classic/NLB (API, Frontend, Grafana)</text>
+  <text x="780" y="2316" text-anchor="middle" fill="#c9d1d9" font-size="11">$0.075</text>
+  <text x="980" y="2316" text-anchor="middle" fill="#c9d1d9" font-size="11">$54.75</text>
+
+  <!-- Total row -->
+  <line x1="120" y1="2326" x2="1120" y2="2326" stroke="#d29922" stroke-width="1"/>
+  <rect x="120" y="2326" width="1000" height="34" rx="0" fill="#21262d"/>
+  <text x="260" y="2348" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">Total (baseline)</text>
+  <text x="780" y="2348" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">$0.621</text>
+  <text x="980" y="2348" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">~$453</text>
+
+  <text x="620" y="2386" text-anchor="middle" fill="#8b949e" font-size="10">Excludes data transfer, CloudWatch logs, and ECR storage. Spot instances or Graviton could reduce EC2 costs ~60%.</text>
+
+  <!-- ── Footer ── -->
+  <line x1="40" y1="2420" x2="1200" y2="2420" stroke="#30363d" stroke-width="1"/>
+  <text x="620" y="2450" text-anchor="middle" fill="#8b949e" font-size="11">Stock Agent Ops — AWS Architecture Diagram — Generated Feb 2026</text>
+</svg>

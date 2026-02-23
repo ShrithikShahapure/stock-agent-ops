@@ -12,12 +12,12 @@ terraform {
     }
   }
 
-  cloud {
-    organization = "shrithik-shahapure"
-
-    workspaces {
-      name = "stock-agent-ops"
-    }
+  backend "s3" {
+    bucket         = "stock-agent-ops-tfstate"
+    key            = "terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "stock-agent-ops-tflock"
+    encrypt        = true
   }
 }
 

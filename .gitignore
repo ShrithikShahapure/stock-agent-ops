@@ -42,3 +42,9 @@ uv.lock
 claude.md
 notes.md
 
+# Terraform
+*.tfvars
+.terraform/
+*.tfstate
+*.tfstate.backup
+

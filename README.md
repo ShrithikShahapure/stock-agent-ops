@@ -114,6 +114,20 @@ flowchart LR
     end
 ```
 
+### AWS Architecture
+
+<p align="center">
+  <a href="doc/aws-architecture.svg">
+    <img src="doc/aws-architecture.svg" alt="AWS Architecture Diagram" width="100%">
+  </a>
+</p>
+
+<details>
+<summary>View as HTML (interactive)</summary>
+
+Download and open [doc/aws-architecture.html](doc/aws-architecture.html) in a browser for the interactive version with hover details.
+</details>
+
 ---
 
 ## Tech Stack

@@ -49,5 +49,4 @@ jobs:
       terraform_dir: 'terraform'
       aws_region: 'us-east-1'
     secrets:
-      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
       AWS_ROLE_ARN: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
