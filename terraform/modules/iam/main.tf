@@ -138,6 +138,82 @@ data "aws_iam_policy_document" "github_actions_ci" {
       "arn:${local.partition}:dynamodb:${var.aws_region}:${local.account_id}:table/stock-agent-ops-tflock",
     ]
   }
+
+  # ── Terraform infrastructure management ──────────────────────────────────
+  # Required for terraform plan/apply of VPC, EKS, ECR, and IAM modules
+
+  statement {
+    sid    = "TFManageVPC"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:DescribeVpcs", "ec2:ModifyVpcAttribute",
+      "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:DescribeSubnets",
+      "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway", "ec2:AttachInternetGateway", "ec2:DetachInternetGateway", "ec2:DescribeInternetGateways",
+      "ec2:CreateNatGateway", "ec2:DeleteNatGateway", "ec2:DescribeNatGateways",
+      "ec2:AllocateAddress", "ec2:ReleaseAddress", "ec2:DescribeAddresses",
+      "ec2:CreateRouteTable", "ec2:DeleteRouteTable", "ec2:DescribeRouteTables", "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
+      "ec2:CreateRoute", "ec2:DeleteRoute",
+      "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup", "ec2:DescribeSecurityGroups", "ec2:DescribeSecurityGroupRules",
+      "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress",
+      "ec2:CreateTags", "ec2:DeleteTags", "ec2:DescribeTags",
+      "ec2:DescribeAvailabilityZones",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DescribeAccountAttributes",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "TFManageEKS"
+    effect = "Allow"
+    actions = [
+      "eks:CreateCluster", "eks:DeleteCluster", "eks:UpdateClusterConfig", "eks:UpdateClusterVersion",
+      "eks:TagResource", "eks:UntagResource",
+      "eks:CreateNodegroup", "eks:DeleteNodegroup", "eks:UpdateNodegroupConfig", "eks:UpdateNodegroupVersion", "eks:DescribeNodegroup", "eks:ListNodegroups",
+      "eks:CreateAddon", "eks:DeleteAddon", "eks:DescribeAddon", "eks:DescribeAddonVersions", "eks:UpdateAddon", "eks:ListAddons",
+      "eks:AssociateAccessPolicy", "eks:DisassociateAccessPolicy",
+      "eks:CreateAccessEntry", "eks:DeleteAccessEntry", "eks:DescribeAccessEntry", "eks:ListAccessEntries",
+      "eks:DescribeUpdate", "eks:ListUpdates",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "TFManageIAM"
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:UpdateRole", "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags",
+      "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies",
+      "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy", "iam:ListRolePolicies",
+      "iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy", "iam:ListPolicyVersions",
+      "iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider", "iam:GetOpenIDConnectProvider", "iam:TagOpenIDConnectProvider",
+      "iam:PassRole", "iam:ListInstanceProfilesForRole",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "TFManageECR"
+    effect = "Allow"
+    actions = [
+      "ecr:CreateRepository", "ecr:DeleteRepository",
+      "ecr:DescribeRepositories", "ecr:TagResource", "ecr:UntagResource", "ecr:ListTagsForResource",
+      "ecr:PutLifecyclePolicy", "ecr:GetLifecyclePolicy", "ecr:DeleteLifecyclePolicy",
+      "ecr:PutImageScanningConfiguration", "ecr:GetRepositoryPolicy", "ecr:SetRepositoryPolicy", "ecr:DeleteRepositoryPolicy",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "TFManageLogs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups",
+      "logs:PutRetentionPolicy", "logs:TagLogGroup", "logs:ListTagsLogGroup",
+      "logs:TagResource", "logs:ListTagsForResource",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_actions_ci" {
