@@ -41,10 +41,10 @@ jobs:
       working_directory: 'frontend'
       test_command: 'npm test'
 
-  # ── Terraform validate & plan ──────────────────────────────────────────────
+  # ── Terraform validate & plan (S3 backend — no TF Cloud token needed) ─────
   terraform:
     needs: [test-go, test-frontend]
-    uses: ShrithikShahapure/reuseable-actions/.github/workflows/terraform-plan.yml@main
+    uses: ShrithikShahapure/reuseable-actions/.github/workflows/terraform-plan-s3.yml@main
     with:
       terraform_dir: 'terraform'
       aws_region: 'us-east-1'
