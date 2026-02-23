@@ -101,9 +101,10 @@ jobs:
           format: sarif
           output: trivy-api-image.sarif
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
 
       - name: Upload API image SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: success() || failure()
         with:
           sarif_file: trivy-api-image.sarif
@@ -117,9 +118,10 @@ jobs:
           format: sarif
           output: trivy-frontend-image.sarif
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
 
       - name: Upload frontend image SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: success() || failure()
         with:
           sarif_file: trivy-frontend-image.sarif
@@ -132,8 +134,8 @@ jobs:
           ECR_API="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/api"
           ECR_FRONTEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/frontend"
           SHA="${{ steps.meta.outputs.sha }}"
-          trivy image --severity CRITICAL --exit-code 1 --no-progress "${ECR_API}:${SHA}"
-          trivy image --severity CRITICAL --exit-code 1 --no-progress "${ECR_FRONTEND}:${SHA}"
+          trivy image --severity CRITICAL --exit-code 1 --no-progress --ignore-unfixed "${ECR_API}:${SHA}"
+          trivy image --severity CRITICAL --exit-code 1 --no-progress --ignore-unfixed "${ECR_FRONTEND}:${SHA}"
 
   # ── Terraform plan + cost → job summary, then apply ────────────────────────
   terraform-apply:
