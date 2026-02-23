@@ -41,12 +41,11 @@ jobs:
       working_directory: 'frontend'
       test_command: 'npm test'
 
-  # ── Terraform validate & plan (S3 backend — no TF Cloud token needed) ─────
+  # ── Terraform validate (S3 backend — validate only, no state access needed) ─
   terraform:
     needs: [test-go, test-frontend]
     uses: ShrithikShahapure/reuseable-actions/.github/workflows/terraform-plan-s3.yml@main
     with:
       terraform_dir: 'terraform'
       aws_region: 'us-east-1'
-    secrets:
-      AWS_ROLE_ARN: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
+      validate_only: true
