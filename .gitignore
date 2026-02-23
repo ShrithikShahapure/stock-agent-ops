@@ -36,9 +36,6 @@ feature_store/data/
 *.db
 grafana/
 
-# Lock files
-uv.lock
-
 claude.md
 notes.md
 
