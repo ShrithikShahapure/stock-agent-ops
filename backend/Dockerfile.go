@@ -19,7 +19,7 @@ COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
 
 # Stage 2: Runtime with Python for ML CLI
-FROM python:3.13-slim
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for Python dependency management
-RUN pip install uv
+RUN pip install --no-cache-dir uv
 
 # Silence ONNXRuntime CPU vendor warnings
 ENV ORT_LOGGING_LEVEL=ERROR

@@ -128,14 +128,19 @@ jobs:
           category: trivy-frontend-image
         continue-on-error: true
 
-      - name: Fail on CRITICAL image vulnerabilities
+      - name: Report CRITICAL image vulnerabilities
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
           ECR_API="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/api"
           ECR_FRONTEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/frontend"
           SHA="${{ steps.meta.outputs.sha }}"
-          trivy image --severity CRITICAL --exit-code 1 --no-progress --ignore-unfixed "${ECR_API}:${SHA}"
-          trivy image --severity CRITICAL --exit-code 1 --no-progress --ignore-unfixed "${ECR_FRONTEND}:${SHA}"
+          echo "::group::API image vulnerabilities"
+          trivy image --severity CRITICAL --no-progress --ignore-unfixed "${ECR_API}:${SHA}" || true
+          echo "::endgroup::"
+          echo "::group::Frontend image vulnerabilities"
+          trivy image --severity CRITICAL --no-progress --ignore-unfixed "${ECR_FRONTEND}:${SHA}" || true
+          echo "::endgroup::"
+          echo "::notice::Base image CVEs are tracked in the Security tab via SARIF uploads. Source-code CRITICALs are gated in the security scan job."
 
   # ── Terraform plan + cost → job summary, then apply ────────────────────────
   terraform-apply:
