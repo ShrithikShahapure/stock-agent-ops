@@ -70,9 +70,10 @@ data "aws_iam_policy_document" "github_assume" {
 }
 
 resource "aws_iam_role" "github_actions_ci" {
-  name               = "github-actions-ci-role"
-  assume_role_policy = data.aws_iam_policy_document.github_assume.json
-  description        = "Assumed by GitHub Actions via OIDC for ECR and EKS operations"
+  name                 = "github-actions-ci-role"
+  assume_role_policy   = data.aws_iam_policy_document.github_assume.json
+  description          = "Assumed by GitHub Actions via OIDC for ECR and EKS operations"
+  max_session_duration = 7200
 
   lifecycle { prevent_destroy = true }
 }
