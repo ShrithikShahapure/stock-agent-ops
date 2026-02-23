@@ -25,6 +25,8 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = [data.tls_certificate.github.certificates[0].sha1_fingerprint]
 
   tags = { Name = "github-actions-oidc" }
+
+  lifecycle { prevent_destroy = true }
 }
 
 # ── Terraform Cloud OIDC provider ────────────────────────────────────────────
@@ -71,6 +73,8 @@ resource "aws_iam_role" "github_actions_ci" {
   name               = "github-actions-ci-role"
   assume_role_policy = data.aws_iam_policy_document.github_assume.json
   description        = "Assumed by GitHub Actions via OIDC for ECR and EKS operations"
+
+  lifecycle { prevent_destroy = true }
 }
 
 data "aws_iam_policy_document" "github_actions_ci" {
