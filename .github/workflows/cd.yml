@@ -13,6 +13,7 @@ permissions:
 env:
   AWS_REGION: us-east-1
   EKS_CLUSTER: stock-agent-ops
+  ECR_REPO_PREFIX: stock-agent-ops
 
 jobs:
   # ── Security scan (reusable — same config as CI) ───────────────────────────
@@ -53,8 +54,6 @@ jobs:
     needs: [test-go, test-frontend]
     outputs:
       image_tag: ${{ steps.meta.outputs.sha }}
-      ecr_api: ${{ steps.meta.outputs.ecr_api }}
-      ecr_frontend: ${{ steps.meta.outputs.ecr_frontend }}
     steps:
       - uses: actions/checkout@v4
 
@@ -63,18 +62,13 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
           aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: 'false'
 
       - name: Set image metadata
         id: meta
         run: |
           SHA="${GITHUB_SHA::8}"
-          ACCOUNT="${{ secrets.AWS_ACCOUNT_ID }}"
-          REGION="${{ env.AWS_REGION }}"
-          ECR_API="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/stock-agent-ops/api"
-          ECR_FRONTEND="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/stock-agent-ops/frontend"
           echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "ecr_api=${ECR_API}" >> "$GITHUB_OUTPUT"
-          echo "ecr_frontend=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
 
       - name: Login to ECR
         run: |
@@ -84,19 +78,17 @@ jobs:
                            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
       - name: Build & push API image
-        env:
-          ECR_API: ${{ steps.meta.outputs.ecr_api }}
-          SHA: ${{ steps.meta.outputs.sha }}
         run: |
+          ECR_API="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/api"
+          SHA="${{ steps.meta.outputs.sha }}"
           docker build -f backend/Dockerfile.go -t "${ECR_API}:${SHA}" -t "${ECR_API}:latest" .
           docker push "${ECR_API}:${SHA}"
           docker push "${ECR_API}:latest"
 
       - name: Build & push frontend image
-        env:
-          ECR_FRONTEND: ${{ steps.meta.outputs.ecr_frontend }}
-          SHA: ${{ steps.meta.outputs.sha }}
         run: |
+          ECR_FRONTEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/frontend"
+          SHA="${{ steps.meta.outputs.sha }}"
           docker build -f frontend/Dockerfile -t "${ECR_FRONTEND}:${SHA}" -t "${ECR_FRONTEND}:latest" frontend/
           docker push "${ECR_FRONTEND}:${SHA}"
           docker push "${ECR_FRONTEND}:latest"
@@ -105,40 +97,43 @@ jobs:
       - name: Trivy scan API image (SARIF)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ steps.meta.outputs.ecr_api }}:${{ steps.meta.outputs.sha }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/api:${{ steps.meta.outputs.sha }}
           format: sarif
           output: trivy-api-image.sarif
           severity: CRITICAL,HIGH
 
       - name: Upload API image SARIF
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: success() || failure()
         with:
           sarif_file: trivy-api-image.sarif
           category: trivy-api-image
+        continue-on-error: true
 
       - name: Trivy scan frontend image (SARIF)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ steps.meta.outputs.ecr_frontend }}:${{ steps.meta.outputs.sha }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/frontend:${{ steps.meta.outputs.sha }}
           format: sarif
           output: trivy-frontend-image.sarif
           severity: CRITICAL,HIGH
 
       - name: Upload frontend image SARIF
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: success() || failure()
         with:
           sarif_file: trivy-frontend-image.sarif
           category: trivy-frontend-image
+        continue-on-error: true
 
       - name: Fail on CRITICAL image vulnerabilities
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-          trivy image --severity CRITICAL --exit-code 1 --no-progress \
-            "${{ steps.meta.outputs.ecr_api }}:${{ steps.meta.outputs.sha }}"
-          trivy image --severity CRITICAL --exit-code 1 --no-progress \
-            "${{ steps.meta.outputs.ecr_frontend }}:${{ steps.meta.outputs.sha }}"
+          ECR_API="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/api"
+          ECR_FRONTEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/frontend"
+          SHA="${{ steps.meta.outputs.sha }}"
+          trivy image --severity CRITICAL --exit-code 1 --no-progress "${ECR_API}:${SHA}"
+          trivy image --severity CRITICAL --exit-code 1 --no-progress "${ECR_FRONTEND}:${SHA}"
 
   # ── Terraform plan + cost → job summary, then apply ────────────────────────
   terraform-apply:
@@ -147,8 +142,6 @@ jobs:
     needs: build-and-push
     outputs:
       cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
-      ecr_api_url: ${{ steps.tf-outputs.outputs.ecr_api_url }}
-      ecr_frontend_url: ${{ steps.tf-outputs.outputs.ecr_frontend_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -282,11 +275,7 @@ jobs:
         id: tf-outputs
         run: |
           CLUSTER=$(terraform -chdir=terraform output -raw cluster_name)
-          ECR_API=$(terraform -chdir=terraform output -raw ecr_api_url)
-          ECR_FRONTEND=$(terraform -chdir=terraform output -raw ecr_frontend_url)
           echo "cluster_name=${CLUSTER}" >> "$GITHUB_OUTPUT"
-          echo "ecr_api_url=${ECR_API}" >> "$GITHUB_OUTPUT"
-          echo "ecr_frontend_url=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
 
   # ── Manual approval gate before EKS deployment ─────────────────────────────
   approve-deploy:
@@ -304,7 +293,7 @@ jobs:
             Deployment is ready for EKS.
 
             **Commit:** ${{ github.sha }}
-            **Image tag:** ${{ needs.terraform-apply.outputs.cluster_name && github.sha }}
+            **Image tag:** ${{ needs.build-and-push.outputs.image_tag }}
 
             Review the Terraform plan and cost estimate in the
             [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
@@ -319,8 +308,6 @@ jobs:
     needs: [build-and-push, terraform-apply, approve-deploy]
     env:
       SHA: ${{ needs.build-and-push.outputs.image_tag }}
-      ECR_API: ${{ needs.terraform-apply.outputs.ecr_api_url }}
-      ECR_FRONTEND: ${{ needs.terraform-apply.outputs.ecr_frontend_url }}
       CLUSTER_NAME: ${{ needs.terraform-apply.outputs.cluster_name }}
     steps:
       - uses: actions/checkout@v4
@@ -337,6 +324,14 @@ jobs:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Set ECR URLs
+        id: ecr
+        run: |
+          ECR_API="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/api"
+          ECR_FRONTEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO_PREFIX }}/frontend"
+          echo "api=${ECR_API}" >> "$GITHUB_OUTPUT"
+          echo "frontend=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
+
       - name: Update kubeconfig
         run: |
           aws eks update-kubeconfig \
@@ -346,10 +341,12 @@ jobs:
       # Pass 1: deploy everything except the frontend
       - name: Apply non-frontend resources
         run: |
+          ECR_API="${{ steps.ecr.outputs.api }}"
+
           # Pin image tags in the overlay
           cd k8s/overlays/aws
           kustomize edit set image \
-            "stock-agent-ops-api=${{ env.ECR_API }}:${{ env.SHA }}"
+            "stock-agent-ops-api=${ECR_API}:${{ env.SHA }}"
           cd ../../..
 
           # Apply all base resources except frontend
@@ -369,7 +366,7 @@ jobs:
 
           # Deploy API deployment directly with patched image
           kubectl set image deployment/api \
-            api="${{ env.ECR_API }}:${{ env.SHA }}"
+            api="${ECR_API}:${{ env.SHA }}"
 
       - name: Wait for API LoadBalancer hostname
         id: api-lb
@@ -396,6 +393,8 @@ jobs:
         env:
           API_HOSTNAME: ${{ steps.api-lb.outputs.hostname }}
         run: |
+          ECR_FRONTEND="${{ steps.ecr.outputs.frontend }}"
+
           # Inject real API URL into the frontend patch
           sed -i "s|__API_URL_PLACEHOLDER__|http://${API_HOSTNAME}:8000|g" \
             k8s/overlays/aws/frontend-patch.yaml
@@ -403,11 +402,11 @@ jobs:
           # Pin frontend image tag
           cd k8s/overlays/aws
           kustomize edit set image \
-            "stock-agent-ops-frontend=${{ env.ECR_FRONTEND }}:${{ env.SHA }}"
+            "stock-agent-ops-frontend=${ECR_FRONTEND}:${{ env.SHA }}"
           cd ../../..
 
           kubectl set image deployment/frontend \
-            frontend="${{ env.ECR_FRONTEND }}:${{ env.SHA }}"
+            frontend="${ECR_FRONTEND}:${{ env.SHA }}"
 
           kubectl apply -f k8s/overlays/aws/frontend-patch.yaml
 
