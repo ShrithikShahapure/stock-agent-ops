@@ -1,6 +1,6 @@
 # Multi-stage build: Go binary + Python runtime for ML CLI
 # Stage 1: Build Go binary
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /build
 
