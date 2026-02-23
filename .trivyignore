@@ -1,0 +1,7 @@
+# zlib1g: integer overflow in minizip zipOpenNewFileInZip4_64
+# Status: will_not_fix by Debian — minizip component not used in our stack
+CVE-2023-45853
+
+# libsqlite3-0: integer overflow
+# Status: affected — no Debian fix available yet
+CVE-2025-7458
