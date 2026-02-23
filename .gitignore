@@ -28,7 +28,7 @@ outputs/
 models/
 
 # Compiled binaries
-server
+/server
 
 # No data
 /data/
