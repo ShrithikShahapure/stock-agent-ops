@@ -137,13 +137,11 @@ jobs:
           trivy image --severity CRITICAL --exit-code 1 --no-progress --ignorefile .trivyignore "${ECR_API}:${SHA}"
           trivy image --severity CRITICAL --exit-code 1 --no-progress --ignorefile .trivyignore "${ECR_FRONTEND}:${SHA}"
 
-  # ── Terraform plan + cost → job summary, then apply ────────────────────────
-  terraform-apply:
-    name: Terraform Plan & Apply
+  # ── Terraform plan + cost estimate ─────────────────────────────────────────
+  terraform-plan:
+    name: Terraform Plan
     runs-on: ubuntu-latest
     needs: build-and-push
-    outputs:
-      cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -270,6 +268,53 @@ jobs:
           PYEOF
           cat /tmp/cost_summary.md >> "$GITHUB_STEP_SUMMARY"
 
+  # ── Approval gate before Terraform apply ──────────────────────────────────
+  approve-terraform:
+    name: Approve Terraform Apply
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    steps:
+      - uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ secrets.GITHUB_TOKEN }}
+          approvers: ShrithikShahapure
+          minimum-approvals: 1
+          issue-title: "Approve Terraform Apply — ${{ github.sha }}"
+          issue-body: |
+            Terraform plan is ready for apply.
+
+            **Commit:** ${{ github.sha }}
+            **Image tag:** ${{ needs.build-and-push.outputs.image_tag }}
+
+            Review the Terraform plan and cost estimate in the
+            [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+            **Approve** this issue to run `terraform apply`, or **close** to cancel.
+          exclude-workflow-initiator-as-approver: false
+
+  # ── Terraform apply (only after approval) ─────────────────────────────────
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [build-and-push, approve-terraform]
+    outputs:
+      cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init
+
       - name: Terraform Apply
         run: terraform -chdir=terraform apply -auto-approve -input=false
 
@@ -279,9 +324,9 @@ jobs:
           CLUSTER=$(terraform -chdir=terraform output -raw cluster_name)
           echo "cluster_name=${CLUSTER}" >> "$GITHUB_OUTPUT"
 
-  # ── Manual approval gate before EKS deployment ─────────────────────────────
+  # ── Approval gate before EKS deployment ──────────────────────────────────
   approve-deploy:
-    name: Approve Deployment
+    name: Approve EKS Deployment
     runs-on: ubuntu-latest
     needs: terraform-apply
     steps:
@@ -292,15 +337,15 @@ jobs:
           minimum-approvals: 1
           issue-title: "Deploy to EKS — ${{ github.sha }}"
           issue-body: |
-            Deployment is ready for EKS.
+            Terraform apply completed. Deployment is ready for EKS.
 
             **Commit:** ${{ github.sha }}
             **Image tag:** ${{ needs.build-and-push.outputs.image_tag }}
 
-            Review the Terraform plan and cost estimate in the
-            [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+            Review the workflow run summary at
+            [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
 
-            Approve this issue to proceed with deployment, or close to cancel.
+            **Approve** this issue to deploy to EKS, or **close** to cancel.
           exclude-workflow-initiator-as-approver: false
 
   # ── Deploy to EKS (two-pass: API first, then frontend with real URL) ───────
