@@ -1,499 +1,430 @@
-# Commented out until ready to deploy. Uncomment all lines below to enable.
+name: CD
 
-# name: CD
-#
-# on:
-#   push:
-#     branches: [main]
-#
-# permissions:
-#   id-token: write        # required for OIDC
-#   contents: read
-#   security-events: write # required for SARIF upload (Trivy)
-#
-# env:
-#   AWS_REGION: us-east-1
-#   EKS_CLUSTER: stock-agent-ops
-#   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-#
-# jobs:
-#   # ── Gate: run all tests before any deployment ──────────────────────────────
-#   test:
-#     name: Tests (gate)
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - uses: actions/setup-go@v5
-#         with:
-#           go-version-file: go.mod
-#           cache: true
-#
-#       - name: Go tests
-#         run: go test ./internal/...
-#
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: '20'
-#           cache: npm
-#           cache-dependency-path: frontend/package-lock.json
-#
-#       - name: Frontend install
-#         run: npm ci
-#         working-directory: frontend
-#
-#       - name: Frontend tests
-#         run: npm test
-#         working-directory: frontend
-#
-#   # ── Security scanning (filesystem + IaC) ─────────────────────────────────
-#   security-scan:
-#     name: Security Scan
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - name: Trivy filesystem scan (SARIF)
-#         uses: aquasecurity/trivy-action@0.28.0
-#         with:
-#           scan-type: fs
-#           scan-ref: .
-#           format: sarif
-#           output: trivy-fs-results.sarif
-#           severity: CRITICAL,HIGH
-#
-#       - name: Upload Trivy FS SARIF to GitHub Security tab
-#         uses: github/codeql-action/upload-sarif@v3
-#         if: always()
-#         with:
-#           sarif_file: trivy-fs-results.sarif
-#           category: trivy-fs-cd
-#
-#       - name: Trivy filesystem scan (fail on CRITICAL)
-#         uses: aquasecurity/trivy-action@0.28.0
-#         with:
-#           scan-type: fs
-#           scan-ref: .
-#           format: table
-#           severity: CRITICAL
-#           exit-code: '1'
-#
-#       - uses: actions/setup-go@v5
-#         with:
-#           go-version-file: go.mod
-#           cache: true
-#
-#       - name: Run gosec
-#         uses: securego/gosec@master
-#         with:
-#           args: -fmt sarif -out gosec-results.sarif ./internal/...
-#         continue-on-error: true
-#
-#       - name: Upload gosec SARIF
-#         uses: github/codeql-action/upload-sarif@v3
-#         if: always()
-#         with:
-#           sarif_file: gosec-results.sarif
-#           category: gosec-cd
-#
-#       - uses: actions/setup-python@v5
-#         with:
-#           python-version: '3.12'
-#
-#       - name: Install bandit
-#         run: pip install bandit[sarif]
-#
-#       - name: Run bandit
-#         run: bandit -r src/ scripts/ -f sarif -o bandit-results.sarif --severity-level medium || true
-#
-#       - name: Upload bandit SARIF
-#         uses: github/codeql-action/upload-sarif@v3
-#         if: always()
-#         with:
-#           sarif_file: bandit-results.sarif
-#           category: bandit-cd
-#
-#   # ── Build & push Docker images to ECR ────────────────────────────────────
-#   build-and-push:
-#     name: Build & Push ECR Images
-#     runs-on: ubuntu-latest
-#     needs: [test, security-scan]
-#     outputs:
-#       image_tag: ${{ steps.meta.outputs.sha }}
-#       ecr_api: ${{ steps.meta.outputs.ecr_api }}
-#       ecr_frontend: ${{ steps.meta.outputs.ecr_frontend }}
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - name: Configure AWS credentials via OIDC
-#         uses: aws-actions/configure-aws-credentials@v4
-#         with:
-#           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
-#           aws-region: ${{ env.AWS_REGION }}
-#
-#       - name: Set image metadata
-#         id: meta
-#         run: |
-#           SHA="${GITHUB_SHA::8}"
-#           ACCOUNT="${{ secrets.AWS_ACCOUNT_ID }}"
-#           REGION="${{ env.AWS_REGION }}"
-#           ECR_API="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/stock-agent-ops/api"
-#           ECR_FRONTEND="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/stock-agent-ops/frontend"
-#           echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-#           echo "ecr_api=${ECR_API}" >> "$GITHUB_OUTPUT"
-#           echo "ecr_frontend=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
-#
-#       - name: Login to ECR
-#         run: |
-#           aws ecr get-login-password --region ${{ env.AWS_REGION }} \
-#             | docker login --username AWS \
-#                            --password-stdin \
-#                            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-#
-#       - name: Build & push API image
-#         env:
-#           ECR_API: ${{ steps.meta.outputs.ecr_api }}
-#           SHA: ${{ steps.meta.outputs.sha }}
-#         run: |
-#           docker build -f backend/Dockerfile.go -t "${ECR_API}:${SHA}" -t "${ECR_API}:latest" .
-#           docker push "${ECR_API}:${SHA}"
-#           docker push "${ECR_API}:latest"
-#
-#       - name: Build & push frontend image
-#         env:
-#           ECR_FRONTEND: ${{ steps.meta.outputs.ecr_frontend }}
-#           SHA: ${{ steps.meta.outputs.sha }}
-#         run: |
-#           docker build -f frontend/Dockerfile -t "${ECR_FRONTEND}:${SHA}" -t "${ECR_FRONTEND}:latest" frontend/
-#           docker push "${ECR_FRONTEND}:${SHA}"
-#           docker push "${ECR_FRONTEND}:latest"
-#
-#       # ── Trivy image scanning (post-build, pre-deploy) ─────────────────────
-#       - name: Trivy scan API image
-#         uses: aquasecurity/trivy-action@0.28.0
-#         with:
-#           image-ref: ${{ steps.meta.outputs.ecr_api }}:${{ steps.meta.outputs.sha }}
-#           format: sarif
-#           output: trivy-api-image.sarif
-#           severity: CRITICAL,HIGH
-#
-#       - name: Upload API image SARIF
-#         uses: github/codeql-action/upload-sarif@v3
-#         if: always()
-#         with:
-#           sarif_file: trivy-api-image.sarif
-#           category: trivy-api-image
-#
-#       - name: Trivy scan frontend image
-#         uses: aquasecurity/trivy-action@0.28.0
-#         with:
-#           image-ref: ${{ steps.meta.outputs.ecr_frontend }}:${{ steps.meta.outputs.sha }}
-#           format: sarif
-#           output: trivy-frontend-image.sarif
-#           severity: CRITICAL,HIGH
-#
-#       - name: Upload frontend image SARIF
-#         uses: github/codeql-action/upload-sarif@v3
-#         if: always()
-#         with:
-#           sarif_file: trivy-frontend-image.sarif
-#           category: trivy-frontend-image
-#
-#       - name: Fail on CRITICAL image vulnerabilities
-#         uses: aquasecurity/trivy-action@0.28.0
-#         with:
-#           image-ref: ${{ steps.meta.outputs.ecr_api }}:${{ steps.meta.outputs.sha }}
-#           format: table
-#           severity: CRITICAL
-#           exit-code: '1'
-#
-#   # ── Terraform plan + cost → job summary, then apply ──────────────────────
-#   terraform-apply:
-#     name: Terraform Plan & Apply
-#     runs-on: ubuntu-latest
-#     needs: build-and-push
-#     outputs:
-#       cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
-#       ecr_api_url: ${{ steps.tf-outputs.outputs.ecr_api_url }}
-#       ecr_frontend_url: ${{ steps.tf-outputs.outputs.ecr_frontend_url }}
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - uses: hashicorp/setup-terraform@v3
-#         with:
-#           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-#           terraform_wrapper: false   # needed to capture outputs cleanly
-#
-#       - name: Configure AWS credentials via OIDC
-#         uses: aws-actions/configure-aws-credentials@v4
-#         with:
-#           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
-#           aws-region: us-east-1
-#
-#       - name: Terraform Init
-#         run: terraform -chdir=terraform init
-#
-#       - name: Terraform Plan
-#         id: plan
-#         run: |
-#           terraform -chdir=terraform plan -no-color -input=false -out=tfplan 2>&1 | tee /tmp/plan.txt
-#
-#       - name: Write Terraform Plan to job summary
-#         if: always()
-#         run: |
-#           echo "## Terraform Plan" >> "$GITHUB_STEP_SUMMARY"
-#           echo '```' >> "$GITHUB_STEP_SUMMARY"
-#           cat /tmp/plan.txt >> "$GITHUB_STEP_SUMMARY"
-#           echo '```' >> "$GITHUB_STEP_SUMMARY"
-#
-#       - name: Calculate cost estimate
-#         id: cost
-#         run: |
-#           python3 - << 'PYEOF'
-#           import re, json, os
-#
-#           with open("/tmp/plan.txt") as f:
-#               plan = f.read()
-#           region = "us-east-1"
-#
-#           created = re.findall(
-#               r'#\s+([\w.]+)\s+will be (created|updated|replaced)', plan
-#           )
-#           resource_types = [addr.rsplit('.', 2)[-2] for addr, _ in created]
-#
-#           def count(rtype):
-#               return resource_types.count(rtype)
-#
-#           instance_match = re.search(r'instance_types\s*=\s*\[\s*"([^"]+)"', plan)
-#           instance_type  = instance_match.group(1) if instance_match else "m5.xlarge"
-#
-#           desired_match = re.search(r'desired_size\s*=\s*(\d+)', plan)
-#           node_count    = int(desired_match.group(1)) if desired_match else 2
-#
-#           disk_match = re.search(r'disk_size\s*=\s*(\d+)', plan)
-#           disk_gb    = int(disk_match.group(1)) if disk_match else 50
-#
-#           # Hardcoded prices (reliable fallback — no network dependency in CD)
-#           EC2_PRICES = {"m5.xlarge": 0.192, "m5.large": 0.096,
-#                         "t3.medium": 0.0416, "t3.large": 0.0832}
-#           EBS_PER_GB_MONTH = 0.10
-#
-#           items = []
-#           n_eks = count("aws_eks_cluster")
-#           if n_eks:
-#               items.append(("EKS control plane", n_eks, 0.10))
-#
-#           n_ng = count("aws_eks_node_group")
-#           if n_ng:
-#               price = EC2_PRICES.get(instance_type, 0.192)
-#               items.append((f"EC2 {instance_type} x {node_count} nodes",
-#                              node_count, price))
-#               ebs_hourly = (disk_gb * EBS_PER_GB_MONTH * node_count) / 730
-#               items.append((f"EBS gp2 {disk_gb} GB x {node_count} nodes",
-#                              1, ebs_hourly))
-#
-#           n_nat = count("aws_nat_gateway")
-#           if n_nat:
-#               items.append(("NAT Gateway", n_nat, 0.045))
-#
-#           total_hourly  = sum(qty * unit for _, qty, unit in items)
-#           total_daily   = total_hourly * 24
-#           total_monthly = total_hourly * 730
-#
-#           result = {
-#               "total_daily":   round(total_daily, 2),
-#               "total_monthly": round(total_monthly, 2),
-#               "items": [
-#                   {"label": label, "daily": round(qty * unit * 24, 2),
-#                    "monthly": round(qty * unit * 730, 2)}
-#                   for label, qty, unit in items
-#               ],
-#               "instance_type": instance_type,
-#               "node_count": node_count,
-#               "region": region,
-#           }
-#           with open("/tmp/cost.json", "w") as f:
-#               json.dump(result, f)
-#           PYEOF
-#
-#       - name: Write cost estimate to job summary
-#         if: always()
-#         run: |
-#           python3 - << 'PYEOF'
-#           import json
-#           data = json.load(open("/tmp/cost.json"))
-#           lines = []
-#           lines.append("## Infrastructure Cost Estimate")
-#           lines.append(f"> {data['region']} · {data['node_count']}x {data['instance_type']} nodes · on-demand pricing")
-#           lines.append("")
-#           lines.append("| Period  | Estimated cost |")
-#           lines.append("|---------|---------------|")
-#           lines.append(f"| 1 day   | **${data['total_daily']:.2f}** |")
-#           lines.append(f"| 1 month | **${data['total_monthly']:.2f}** |")
-#           lines.append("")
-#           lines.append("| Resource | 1 day | 1 month |")
-#           lines.append("|----------|------:|--------:|")
-#           for i in data["items"]:
-#               if i["monthly"] > 0:
-#                   lines.append(f"| {i['label']} | ${i['daily']:.2f} | ${i['monthly']:.2f} |")
-#           lines.append(f"| **Total** | **${data['total_daily']:.2f}** | **${data['total_monthly']:.2f}** |")
-#           lines.append("")
-#           lines.append("_Prices are hardcoded estimates. Excludes data transfer._")
-#           with open("/tmp/cost_summary.md", "w") as f:
-#               f.write("\n".join(lines))
-#           PYEOF
-#           cat /tmp/cost_summary.md >> "$GITHUB_STEP_SUMMARY"
-#
-#       - name: Terraform Apply
-#         run: terraform -chdir=terraform apply -auto-approve -input=false
-#
-#       - name: Capture Terraform outputs
-#         id: tf-outputs
-#         run: |
-#           CLUSTER=$(terraform -chdir=terraform output -raw cluster_name)
-#           ECR_API=$(terraform -chdir=terraform output -raw ecr_api_url)
-#           ECR_FRONTEND=$(terraform -chdir=terraform output -raw ecr_frontend_url)
-#           echo "cluster_name=${CLUSTER}" >> "$GITHUB_OUTPUT"
-#           echo "ecr_api_url=${ECR_API}" >> "$GITHUB_OUTPUT"
-#           echo "ecr_frontend_url=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
-#
-#   # ── Manual approval gate before EKS deployment ───────────────────────────
-#   approve-deploy:
-#     name: Approve Deployment
-#     runs-on: ubuntu-latest
-#     needs: terraform-apply
-#     steps:
-#       - uses: trstringer/manual-approval@v1
-#         with:
-#           secret: ${{ secrets.GITHUB_TOKEN }}
-#           approvers: ShrithikShahapure
-#           minimum-approvals: 1
-#           issue-title: "Deploy to EKS — ${{ github.sha }}"
-#           issue-body: |
-#             Deployment is ready for EKS.
-#
-#             **Commit:** ${{ github.sha }}
-#             **Image tag:** ${{ needs.terraform-apply.outputs.cluster_name && github.sha }}
-#
-#             Review the Terraform plan and cost estimate in the
-#             [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
-#
-#             Approve this issue to proceed with deployment, or close to cancel.
-#           exclude-workflow-initiator-as-approver: false
-#
-#   # ── Deploy to EKS (two-pass: API first, then frontend with real URL) ─────
-#   deploy-to-eks:
-#     name: Deploy to EKS
-#     runs-on: ubuntu-latest
-#     needs: [build-and-push, terraform-apply, approve-deploy]
-#     env:
-#       SHA: ${{ needs.build-and-push.outputs.image_tag }}
-#       ECR_API: ${{ needs.terraform-apply.outputs.ecr_api_url }}
-#       ECR_FRONTEND: ${{ needs.terraform-apply.outputs.ecr_frontend_url }}
-#       CLUSTER_NAME: ${{ needs.terraform-apply.outputs.cluster_name }}
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - name: Install kubectl
-#         uses: azure/setup-kubectl@v4
-#
-#       - name: Install kustomize
-#         uses: imranismail/setup-kustomize@v2
-#
-#       - name: Configure AWS credentials via OIDC
-#         uses: aws-actions/configure-aws-credentials@v4
-#         with:
-#           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
-#           aws-region: ${{ env.AWS_REGION }}
-#
-#       - name: Update kubeconfig
-#         run: |
-#           aws eks update-kubeconfig \
-#             --name "${{ env.CLUSTER_NAME }}" \
-#             --region ${{ env.AWS_REGION }}
-#
-#       # Pass 1: deploy everything except the frontend
-#       - name: Apply non-frontend resources
-#         run: |
-#           # Pin image tags in the overlay
-#           cd k8s/overlays/aws
-#           kustomize edit set image \
-#             "stock-agent-ops-api=${{ env.ECR_API }}:${{ env.SHA }}"
-#           cd ../../..
-#
-#           # Apply all base resources except frontend
-#           kubectl apply -f k8s/redis.yaml
-#           kubectl apply -f k8s/qdrant.yaml
-#           kubectl apply -f k8s/volumes.yaml
-#           kubectl apply -f k8s/prometheus.yaml
-#           kubectl apply -f k8s/grafana.yaml
-#           kubectl apply -f k8s/llama.yaml
-#
-#           # Apply API via overlay (strips imagePullPolicy: Never, adds FMI_API_KEY)
-#           kustomize build k8s/overlays/aws --load-restrictor LoadRestrictionsNone \
-#             | grep -v 'kind: Deployment' \
-#             | kubectl apply -f - || true   # ignore empty stream edge-case
-#
-#           kubectl apply -f k8s/overlays/aws/api-patch.yaml 2>/dev/null || true
-#
-#           # Deploy API deployment directly with patched image
-#           kubectl set image deployment/api \
-#             api="${{ env.ECR_API }}:${{ env.SHA }}"
-#
-#       - name: Wait for API LoadBalancer hostname
-#         id: api-lb
-#         run: |
-#           echo "Waiting for API LoadBalancer to be assigned a hostname..."
-#           for i in $(seq 1 30); do
-#             HOSTNAME=$(kubectl get svc api \
-#               -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-#             if [ -n "$HOSTNAME" ]; then
-#               echo "hostname=${HOSTNAME}" >> "$GITHUB_OUTPUT"
-#               echo "API LB: ${HOSTNAME}"
-#               break
-#             fi
-#             echo "Attempt ${i}/30 — waiting 10s..."
-#             sleep 10
-#           done
-#           if [ -z "$HOSTNAME" ]; then
-#             echo "ERROR: LoadBalancer hostname not assigned after 5 minutes"
-#             exit 1
-#           fi
-#
-#       # Pass 2: deploy frontend with the real public API URL
-#       - name: Patch & apply frontend
-#         env:
-#           API_HOSTNAME: ${{ steps.api-lb.outputs.hostname }}
-#         run: |
-#           # Inject real API URL into the frontend patch
-#           sed -i "s|__API_URL_PLACEHOLDER__|http://${API_HOSTNAME}:8000|g" \
-#             k8s/overlays/aws/frontend-patch.yaml
-#
-#           # Pin frontend image tag
-#           cd k8s/overlays/aws
-#           kustomize edit set image \
-#             "stock-agent-ops-frontend=${{ env.ECR_FRONTEND }}:${{ env.SHA }}"
-#           cd ../../..
-#
-#           kubectl set image deployment/frontend \
-#             frontend="${{ env.ECR_FRONTEND }}:${{ env.SHA }}"
-#
-#           kubectl apply -f k8s/overlays/aws/frontend-patch.yaml
-#
-#       - name: Wait for rollout
-#         run: |
-#           kubectl rollout status deployment/api --timeout=300s
-#           kubectl rollout status deployment/frontend --timeout=300s
-#
-#       - name: Smoke test
-#         env:
-#           API_HOSTNAME: ${{ steps.api-lb.outputs.hostname }}
-#         run: |
-#           sleep 15
-#           STATUS=$(curl -sf "http://${API_HOSTNAME}:8000/health" | python3 -c \
-#             "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))")
-#           if [ "$STATUS" != "healthy" ]; then
-#             echo "Health check failed: got '${STATUS}'"
-#             exit 1
-#           fi
-#           echo "Health check passed."
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+  issues: write
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: stock-agent-ops
+
+jobs:
+  # ── Security scan (reusable — same config as CI) ───────────────────────────
+  security:
+    uses: ShrithikShahapure/reuseable-actions/.github/workflows/security-scan.yml@main
+    with:
+      enable_trivy: true
+      enable_gosec: true
+      go_scan_path: './internal/...'
+      enable_bandit: true
+      python_scan_paths: 'src/ scripts/'
+      enable_npm_audit: true
+      node_working_directory: 'frontend'
+      fail_on_critical: true
+      post_pr_comment: false
+
+  # ── Go tests (reusable) ────────────────────────────────────────────────────
+  test-go:
+    needs: security
+    uses: ShrithikShahapure/reuseable-actions/.github/workflows/test-go.yml@main
+    with:
+      test_path: './internal/...'
+      race: false
+      coverage: false
+
+  # ── Frontend tests (reusable) ──────────────────────────────────────────────
+  test-frontend:
+    needs: security
+    uses: ShrithikShahapure/reuseable-actions/.github/workflows/test-node.yml@main
+    with:
+      working_directory: 'frontend'
+      test_command: 'npm test'
+
+  # ── Build & push Docker images to ECR ──────────────────────────────────────
+  build-and-push:
+    name: Build & Push ECR Images
+    runs-on: ubuntu-latest
+    needs: [test-go, test-frontend]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.sha }}
+      ecr_api: ${{ steps.meta.outputs.ecr_api }}
+      ecr_frontend: ${{ steps.meta.outputs.ecr_frontend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          SHA="${GITHUB_SHA::8}"
+          ACCOUNT="${{ secrets.AWS_ACCOUNT_ID }}"
+          REGION="${{ env.AWS_REGION }}"
+          ECR_API="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/stock-agent-ops/api"
+          ECR_FRONTEND="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/stock-agent-ops/frontend"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "ecr_api=${ECR_API}" >> "$GITHUB_OUTPUT"
+          echo "ecr_frontend=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS \
+                           --password-stdin \
+                           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+      - name: Build & push API image
+        env:
+          ECR_API: ${{ steps.meta.outputs.ecr_api }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          docker build -f backend/Dockerfile.go -t "${ECR_API}:${SHA}" -t "${ECR_API}:latest" .
+          docker push "${ECR_API}:${SHA}"
+          docker push "${ECR_API}:latest"
+
+      - name: Build & push frontend image
+        env:
+          ECR_FRONTEND: ${{ steps.meta.outputs.ecr_frontend }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          docker build -f frontend/Dockerfile -t "${ECR_FRONTEND}:${SHA}" -t "${ECR_FRONTEND}:latest" frontend/
+          docker push "${ECR_FRONTEND}:${SHA}"
+          docker push "${ECR_FRONTEND}:latest"
+
+      # ── Trivy image scanning (post-build, pre-deploy) ───────────────────────
+      - name: Trivy scan API image (SARIF)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.ecr_api }}:${{ steps.meta.outputs.sha }}
+          format: sarif
+          output: trivy-api-image.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload API image SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-api-image.sarif
+          category: trivy-api-image
+
+      - name: Trivy scan frontend image (SARIF)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.ecr_frontend }}:${{ steps.meta.outputs.sha }}
+          format: sarif
+          output: trivy-frontend-image.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload frontend image SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-frontend-image.sarif
+          category: trivy-frontend-image
+
+      - name: Fail on CRITICAL image vulnerabilities
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy image --severity CRITICAL --exit-code 1 --no-progress \
+            "${{ steps.meta.outputs.ecr_api }}:${{ steps.meta.outputs.sha }}"
+          trivy image --severity CRITICAL --exit-code 1 --no-progress \
+            "${{ steps.meta.outputs.ecr_frontend }}:${{ steps.meta.outputs.sha }}"
+
+  # ── Terraform plan + cost → job summary, then apply ────────────────────────
+  terraform-apply:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    outputs:
+      cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
+      ecr_api_url: ${{ steps.tf-outputs.outputs.ecr_api_url }}
+      ecr_frontend_url: ${{ steps.tf-outputs.outputs.ecr_frontend_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform -chdir=terraform plan -no-color -input=false -out=tfplan 2>&1 | tee /tmp/plan.txt
+
+      - name: Write Terraform Plan to job summary
+        if: always()
+        run: |
+          echo "## Terraform Plan" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/plan.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Calculate cost estimate
+        id: cost
+        run: |
+          python3 - << 'PYEOF'
+          import re, json, os
+
+          with open("/tmp/plan.txt") as f:
+              plan = f.read()
+          region = "us-east-1"
+
+          created = re.findall(
+              r'#\s+([\w.]+)\s+will be (created|updated|replaced)', plan
+          )
+          resource_types = [addr.rsplit('.', 2)[-2] for addr, _ in created]
+
+          def count(rtype):
+              return resource_types.count(rtype)
+
+          instance_match = re.search(r'instance_types\s*=\s*\[\s*"([^"]+)"', plan)
+          instance_type  = instance_match.group(1) if instance_match else "m5.xlarge"
+
+          desired_match = re.search(r'desired_size\s*=\s*(\d+)', plan)
+          node_count    = int(desired_match.group(1)) if desired_match else 2
+
+          disk_match = re.search(r'disk_size\s*=\s*(\d+)', plan)
+          disk_gb    = int(disk_match.group(1)) if disk_match else 50
+
+          EC2_PRICES = {"m5.xlarge": 0.192, "m5.large": 0.096,
+                        "t3.medium": 0.0416, "t3.large": 0.0832}
+          EBS_PER_GB_MONTH = 0.10
+
+          items = []
+          n_eks = count("aws_eks_cluster")
+          if n_eks:
+              items.append(("EKS control plane", n_eks, 0.10))
+
+          n_ng = count("aws_eks_node_group")
+          if n_ng:
+              price = EC2_PRICES.get(instance_type, 0.192)
+              items.append((f"EC2 {instance_type} x {node_count} nodes",
+                             node_count, price))
+              ebs_hourly = (disk_gb * EBS_PER_GB_MONTH * node_count) / 730
+              items.append((f"EBS gp2 {disk_gb} GB x {node_count} nodes",
+                             1, ebs_hourly))
+
+          n_nat = count("aws_nat_gateway")
+          if n_nat:
+              items.append(("NAT Gateway", n_nat, 0.045))
+
+          total_hourly  = sum(qty * unit for _, qty, unit in items)
+          total_daily   = total_hourly * 24
+          total_monthly = total_hourly * 730
+
+          result = {
+              "total_daily":   round(total_daily, 2),
+              "total_monthly": round(total_monthly, 2),
+              "items": [
+                  {"label": label, "daily": round(qty * unit * 24, 2),
+                   "monthly": round(qty * unit * 730, 2)}
+                  for label, qty, unit in items
+              ],
+              "instance_type": instance_type,
+              "node_count": node_count,
+              "region": region,
+          }
+          with open("/tmp/cost.json", "w") as f:
+              json.dump(result, f)
+          PYEOF
+
+      - name: Write cost estimate to job summary
+        if: always()
+        run: |
+          python3 - << 'PYEOF'
+          import json
+          data = json.load(open("/tmp/cost.json"))
+          lines = []
+          lines.append("## Infrastructure Cost Estimate")
+          lines.append(f"> {data['region']} · {data['node_count']}x {data['instance_type']} nodes · on-demand pricing")
+          lines.append("")
+          lines.append("| Period  | Estimated cost |")
+          lines.append("|---------|---------------|")
+          lines.append(f"| 1 day   | **${data['total_daily']:.2f}** |")
+          lines.append(f"| 1 month | **${data['total_monthly']:.2f}** |")
+          lines.append("")
+          lines.append("| Resource | 1 day | 1 month |")
+          lines.append("|----------|------:|--------:|")
+          for i in data["items"]:
+              if i["monthly"] > 0:
+                  lines.append(f"| {i['label']} | ${i['daily']:.2f} | ${i['monthly']:.2f} |")
+          lines.append(f"| **Total** | **${data['total_daily']:.2f}** | **${data['total_monthly']:.2f}** |")
+          lines.append("")
+          lines.append("_Prices are hardcoded estimates. Excludes data transfer._")
+          with open("/tmp/cost_summary.md", "w") as f:
+              f.write("\n".join(lines))
+          PYEOF
+          cat /tmp/cost_summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform Apply
+        run: terraform -chdir=terraform apply -auto-approve -input=false
+
+      - name: Capture Terraform outputs
+        id: tf-outputs
+        run: |
+          CLUSTER=$(terraform -chdir=terraform output -raw cluster_name)
+          ECR_API=$(terraform -chdir=terraform output -raw ecr_api_url)
+          ECR_FRONTEND=$(terraform -chdir=terraform output -raw ecr_frontend_url)
+          echo "cluster_name=${CLUSTER}" >> "$GITHUB_OUTPUT"
+          echo "ecr_api_url=${ECR_API}" >> "$GITHUB_OUTPUT"
+          echo "ecr_frontend_url=${ECR_FRONTEND}" >> "$GITHUB_OUTPUT"
+
+  # ── Manual approval gate before EKS deployment ─────────────────────────────
+  approve-deploy:
+    name: Approve Deployment
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    steps:
+      - uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ secrets.GITHUB_TOKEN }}
+          approvers: ShrithikShahapure
+          minimum-approvals: 1
+          issue-title: "Deploy to EKS — ${{ github.sha }}"
+          issue-body: |
+            Deployment is ready for EKS.
+
+            **Commit:** ${{ github.sha }}
+            **Image tag:** ${{ needs.terraform-apply.outputs.cluster_name && github.sha }}
+
+            Review the Terraform plan and cost estimate in the
+            [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+            Approve this issue to proceed with deployment, or close to cancel.
+          exclude-workflow-initiator-as-approver: false
+
+  # ── Deploy to EKS (two-pass: API first, then frontend with real URL) ───────
+  deploy-to-eks:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: [build-and-push, terraform-apply, approve-deploy]
+    env:
+      SHA: ${{ needs.build-and-push.outputs.image_tag }}
+      ECR_API: ${{ needs.terraform-apply.outputs.ecr_api_url }}
+      ECR_FRONTEND: ${{ needs.terraform-apply.outputs.ecr_frontend_url }}
+      CLUSTER_NAME: ${{ needs.terraform-apply.outputs.cluster_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ci-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name "${{ env.CLUSTER_NAME }}" \
+            --region ${{ env.AWS_REGION }}
+
+      # Pass 1: deploy everything except the frontend
+      - name: Apply non-frontend resources
+        run: |
+          # Pin image tags in the overlay
+          cd k8s/overlays/aws
+          kustomize edit set image \
+            "stock-agent-ops-api=${{ env.ECR_API }}:${{ env.SHA }}"
+          cd ../../..
+
+          # Apply all base resources except frontend
+          kubectl apply -f k8s/redis.yaml
+          kubectl apply -f k8s/qdrant.yaml
+          kubectl apply -f k8s/volumes.yaml
+          kubectl apply -f k8s/prometheus.yaml
+          kubectl apply -f k8s/grafana.yaml
+          kubectl apply -f k8s/llama.yaml
+
+          # Apply API via overlay (strips imagePullPolicy: Never, adds FMI_API_KEY)
+          kustomize build k8s/overlays/aws --load-restrictor LoadRestrictionsNone \
+            | grep -v 'kind: Deployment' \
+            | kubectl apply -f - || true   # ignore empty stream edge-case
+
+          kubectl apply -f k8s/overlays/aws/api-patch.yaml 2>/dev/null || true
+
+          # Deploy API deployment directly with patched image
+          kubectl set image deployment/api \
+            api="${{ env.ECR_API }}:${{ env.SHA }}"
+
+      - name: Wait for API LoadBalancer hostname
+        id: api-lb
+        run: |
+          echo "Waiting for API LoadBalancer to be assigned a hostname..."
+          for i in $(seq 1 30); do
+            HOSTNAME=$(kubectl get svc api \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            if [ -n "$HOSTNAME" ]; then
+              echo "hostname=${HOSTNAME}" >> "$GITHUB_OUTPUT"
+              echo "API LB: ${HOSTNAME}"
+              break
+            fi
+            echo "Attempt ${i}/30 — waiting 10s..."
+            sleep 10
+          done
+          if [ -z "$HOSTNAME" ]; then
+            echo "ERROR: LoadBalancer hostname not assigned after 5 minutes"
+            exit 1
+          fi
+
+      # Pass 2: deploy frontend with the real public API URL
+      - name: Patch & apply frontend
+        env:
+          API_HOSTNAME: ${{ steps.api-lb.outputs.hostname }}
+        run: |
+          # Inject real API URL into the frontend patch
+          sed -i "s|__API_URL_PLACEHOLDER__|http://${API_HOSTNAME}:8000|g" \
+            k8s/overlays/aws/frontend-patch.yaml
+
+          # Pin frontend image tag
+          cd k8s/overlays/aws
+          kustomize edit set image \
+            "stock-agent-ops-frontend=${{ env.ECR_FRONTEND }}:${{ env.SHA }}"
+          cd ../../..
+
+          kubectl set image deployment/frontend \
+            frontend="${{ env.ECR_FRONTEND }}:${{ env.SHA }}"
+
+          kubectl apply -f k8s/overlays/aws/frontend-patch.yaml
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/api --timeout=300s
+          kubectl rollout status deployment/frontend --timeout=300s
+
+      - name: Smoke test
+        env:
+          API_HOSTNAME: ${{ steps.api-lb.outputs.hostname }}
+        run: |
+          sleep 15
+          STATUS=$(curl -sf "http://${API_HOSTNAME}:8000/health" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))")
+          if [ "$STATUS" != "healthy" ]; then
+            echo "Health check failed: got '${STATUS}'"
+            exit 1
+          fi
+          echo "Health check passed."

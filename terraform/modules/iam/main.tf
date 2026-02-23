@@ -110,6 +110,34 @@ data "aws_iam_policy_document" "github_actions_ci" {
       "arn:${local.partition}:eks:${var.aws_region}:${local.account_id}:cluster/${var.cluster_name}",
     ]
   }
+
+  statement {
+    sid    = "TFStateS3"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:ListBucket",
+    ]
+    resources = [
+      "arn:${local.partition}:s3:::stock-agent-ops-tfstate",
+      "arn:${local.partition}:s3:::stock-agent-ops-tfstate/*",
+    ]
+  }
+
+  statement {
+    sid    = "TFStateLock"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+    ]
+    resources = [
+      "arn:${local.partition}:dynamodb:${var.aws_region}:${local.account_id}:table/stock-agent-ops-tflock",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "github_actions_ci" {
