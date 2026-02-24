@@ -396,9 +396,6 @@ jobs:
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Install kustomize
-        uses: imranismail/setup-kustomize@v2
-
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -424,13 +421,7 @@ jobs:
         run: |
           ECR_API="${{ steps.ecr.outputs.api }}"
 
-          # Pin image tags in the overlay
-          cd k8s/overlays/aws
-          kustomize edit set image \
-            "stock-agent-ops-api=${ECR_API}:${{ env.SHA }}"
-          cd ../../..
-
-          # Apply all base resources except frontend
+          # Apply supporting services
           kubectl apply -f k8s/redis.yaml
           kubectl apply -f k8s/qdrant.yaml
           kubectl apply -f k8s/volumes.yaml
@@ -438,16 +429,20 @@ jobs:
           kubectl apply -f k8s/grafana.yaml
           kubectl apply -f k8s/llama.yaml
 
-          # Apply API via overlay (strips imagePullPolicy: Never, adds FMI_API_KEY)
-          kustomize build k8s/overlays/aws --load-restrictor LoadRestrictionsNone \
-            | grep -v 'kind: Deployment' \
-            | kubectl apply -f - || true   # ignore empty stream edge-case
+          # Apply API deployment + services from base manifest
+          kubectl apply -f k8s/api.yaml
 
-          kubectl apply -f k8s/overlays/aws/api-patch.yaml 2>/dev/null || true
-
-          # Deploy API deployment directly with patched image
+          # Patch: set ECR image (replaces imagePullPolicy: Never's local image)
           kubectl set image deployment/api \
             api="${ECR_API}:${{ env.SHA }}"
+
+          # Patch: override imagePullPolicy from Never to IfNotPresent for ECR
+          kubectl patch deployment/api --type=json \
+            -p='[{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"IfNotPresent"}]'
+
+          # Patch: inject FMI_API_KEY from k8s secret (if secret exists)
+          kubectl set env deployment/api --from=secret/app-secrets --prefix="" 2>/dev/null \
+            || echo "Note: app-secrets secret not found, skipping FMI_API_KEY injection"
 
       - name: Wait for API LoadBalancer hostname
         id: api-lb
@@ -476,20 +471,20 @@ jobs:
         run: |
           ECR_FRONTEND="${{ steps.ecr.outputs.frontend }}"
 
-          # Inject real API URL into the frontend patch
-          sed -i "s|__API_URL_PLACEHOLDER__|http://${API_HOSTNAME}:8000|g" \
-            k8s/overlays/aws/frontend-patch.yaml
+          # Apply frontend deployment + service from base manifest
+          kubectl apply -f k8s/frontend.yaml
 
-          # Pin frontend image tag
-          cd k8s/overlays/aws
-          kustomize edit set image \
-            "stock-agent-ops-frontend=${ECR_FRONTEND}:${{ env.SHA }}"
-          cd ../../..
-
+          # Patch: set ECR image
           kubectl set image deployment/frontend \
             frontend="${ECR_FRONTEND}:${{ env.SHA }}"
 
-          kubectl apply -f k8s/overlays/aws/frontend-patch.yaml
+          # Patch: override imagePullPolicy from Never to IfNotPresent for ECR
+          kubectl patch deployment/frontend --type=json \
+            -p='[{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"IfNotPresent"}]'
+
+          # Patch: set the real API_URL (browser-accessible LB hostname)
+          kubectl set env deployment/frontend \
+            API_URL="http://${API_HOSTNAME}:8000"
 
       - name: Wait for rollout
         run: |
