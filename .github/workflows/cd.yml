@@ -432,17 +432,12 @@ jobs:
           # Apply API deployment + services from base manifest
           kubectl apply -f k8s/api.yaml
 
-          # Patch: set ECR image (replaces imagePullPolicy: Never's local image)
-          kubectl set image deployment/api \
-            api="${ECR_API}:${{ env.SHA }}"
-
-          # Patch: override imagePullPolicy from Never to IfNotPresent for ECR
-          kubectl patch deployment/api --type=json \
-            -p='[{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"IfNotPresent"}]'
-
-          # Patch: inject FMI_API_KEY from k8s secret (if secret exists)
-          kubectl set env deployment/api --from=secret/app-secrets --prefix="" 2>/dev/null \
-            || echo "Note: app-secrets secret not found, skipping FMI_API_KEY injection"
+          # Single atomic patch: set ECR image + imagePullPolicy in one operation
+          # (avoids intermediate state where ECR image + imagePullPolicy:Never causes pull failure)
+          kubectl patch deployment/api --type=json -p="[
+            {\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"${ECR_API}:${{ env.SHA }}\"},
+            {\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/imagePullPolicy\",\"value\":\"IfNotPresent\"}
+          ]"
 
       - name: Wait for API LoadBalancer hostname
         id: api-lb
@@ -474,17 +469,12 @@ jobs:
           # Apply frontend deployment + service from base manifest
           kubectl apply -f k8s/frontend.yaml
 
-          # Patch: set ECR image
-          kubectl set image deployment/frontend \
-            frontend="${ECR_FRONTEND}:${{ env.SHA }}"
-
-          # Patch: override imagePullPolicy from Never to IfNotPresent for ECR
-          kubectl patch deployment/frontend --type=json \
-            -p='[{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"IfNotPresent"}]'
-
-          # Patch: set the real API_URL (browser-accessible LB hostname)
-          kubectl set env deployment/frontend \
-            API_URL="http://${API_HOSTNAME}:8000"
+          # Single atomic patch: set ECR image + imagePullPolicy + API_URL in one operation
+          kubectl patch deployment/frontend --type=json -p="[
+            {\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"${ECR_FRONTEND}:${{ env.SHA }}\"},
+            {\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/imagePullPolicy\",\"value\":\"IfNotPresent\"},
+            {\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/env/0\",\"value\":{\"name\":\"API_URL\",\"value\":\"http://${API_HOSTNAME}:8000\"}}
+          ]"
 
       - name: Wait for rollout
         run: |
