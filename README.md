@@ -48,6 +48,12 @@ graph TB
         Grafana["Grafana :3000"]
     end
 
+    subgraph AWS["AWS SageMaker"]
+        SM_Pipe["SageMaker Pipeline<br/>stock-agent-ops-training"]
+        SM_S3["S3<br/>training data · model artifacts"]
+        SM_Pipe --> SM_S3
+    end
+
     UI -->|"Axios REST"| Router
     Handlers -->|"subprocess JSON"| CLI
     Handlers <-->|"get/set/keys"| Redis
@@ -56,6 +62,7 @@ graph TB
     Pipelines --> Feast & MLflow
     LLM_Py -->|"OpenAI-compat API"| LLama
     API -->|"/metrics"| Prom --> Grafana
+    SM_S3 -.->|"model artifacts"| FS
 ```
 
 ### Analyze Request Flow
@@ -96,23 +103,48 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph Parent["Parent Training (^GSPC)"]
-        SP500["S&P 500 data<br/>2004–present"] --> FP["Feature engineering<br/>RSI14 · MACD · OHLCV"]
-        FP --> LSTM["3-layer LSTM<br/>128 hidden · 20% dropout<br/>60-day context · 20 epochs"]
+        SP500["S&P 500 data<br/>1yr lookback"] --> FP["Feature engineering<br/>RSI14 · MACD · OHLCV"]
+        FP --> LSTM["1-layer LSTM<br/>32 hidden · 10-day context<br/>3 epochs"]
         LSTM --> PM["outputs/parent/<br/>*_parent_model.pt"]
     end
 
     subgraph Child["Child Training (e.g. AAPL)"]
         TK["Ticker data<br/>yfinance"] --> FC["Feature engineering"]
-        PM -->|"load weights"| TL["Transfer learning<br/>freeze LSTM · train FC<br/>10 epochs"]
+        PM -->|"load weights"| TL["Transfer learning<br/>freeze LSTM · train FC<br/>2 epochs"]
         FC --> TL
         TL --> CM["outputs/AAPL/<br/>*_child_model.pt"]
     end
 
     subgraph Inference["Inference"]
-        CM --> PRED["predict-child<br/>5-day forecast"]
+        CM --> PRED["predict-child<br/>63-day autoregressive forecast"]
         PRED --> RC["Redis cache<br/>predict_child_AAPL<br/>24h TTL"]
     end
 ```
+
+### SageMaker Training Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Pipeline["SageMaker Pipeline: stock-agent-ops-training"]
+        S1["1. FetchOHLCVData<br/>SKLearn Processing<br/>yfinance → 21 tickers<br/>1yr lookback"]
+        S2["2. TrainParentModel<br/>PyTorch Training<br/>LSTM on ^GSPC<br/>ml.c5.xlarge"]
+        S3["3. TrainChildModels<br/>PyTorch Training<br/>20 tickers (transfer)<br/>ml.c5.xlarge"]
+        S4["4. EvaluateModels<br/>SKLearn Processing<br/>MSE · RMSE · R²"]
+        S1 --> S2 --> S3 --> S4
+    end
+
+    subgraph S3_Bucket["S3: stock-agent-ops-sagemaker-*"]
+        DATA["sagemaker/data/<br/>CSV per ticker"]
+        MODELS["sagemaker/models/<br/>parent + 20 children"]
+        EVAL["sagemaker/evaluation/<br/>evaluation_report.json"]
+    end
+
+    S1 --> DATA
+    S2 & S3 --> MODELS
+    S4 --> EVAL
+```
+
+**Top 20 S&P 500 stocks trained:** AAPL, MSFT, NVDA, AMZN, GOOG, META, BRK-B, LLY, AVGO, JPM, TSLA, UNH, V, XOM, MA, PG, COST, JNJ, HD, WMT
 
 ### AWS Architecture
 
@@ -136,6 +168,7 @@ Download and open [doc/aws-architecture.html](doc/aws-architecture.html) in a br
 |:---|:---|
 | Backend | Go 1.22 (Chi router) |
 | ML Models | PyTorch LSTM (transfer learning) |
+| ML Training Pipeline | AWS SageMaker Pipelines (C5 on-demand instances) |
 | LLM | llama.cpp (Qwen3 7B, Q4_K_M GGUF) |
 | AI Agents | LangGraph + LangChain (OpenAI-compat client) |
 | Feature Store | Feast (offline: Parquet, online: Redis) |
@@ -144,7 +177,9 @@ Download and open [doc/aws-architecture.html](doc/aws-architecture.html) in a br
 | Prediction Cache | Redis (24h TTL) |
 | Monitoring | Prometheus + Grafana |
 | Frontend | React 19 + Vite 6 + TypeScript + Tailwind CSS v4 |
-| Deployment | Docker Compose / Kubernetes (Minikube) |
+| Deployment | Docker Compose / Kubernetes (EKS) |
+| Infrastructure | Terraform (S3, IAM, EKS, ECR, ElastiCache, SQS, SageMaker) |
+| CI/CD | GitHub Actions (OIDC → AWS) |
 
 ---
 
@@ -295,6 +330,7 @@ This project is MLOps-first. Every stage of the ML lifecycle is instrumented.
 
 | Concern | Implementation |
 |:---|:---|
+| **Training pipeline** | AWS SageMaker Pipelines — 4-step pipeline (preprocess → parent train → child train → evaluate) on C5 instances; weekly schedule via GitHub Actions |
 | **Feature store** | Feast — offline Parquet + online Redis; prevents training-serving skew |
 | **Experiment tracking** | MLflow — params, metrics (MSE/RMSE/R²), artifacts (model, scaler, plots), model registry with Production promotion |
 | **Data drift detection** | Custom Z-score mean-shift per feature + volatility ratio; three health levels (Healthy / Degraded / Critical) |
@@ -309,13 +345,79 @@ See [doc/mlops.md](doc/mlops.md) for the full MLOps reference: pipeline details,
 
 ---
 
+## SageMaker Training Pipeline
+
+The model training is orchestrated via an AWS SageMaker Pipeline that runs on **C5 on-demand instances** (compute-optimized). It trains the parent model on ^GSPC and then transfer-learns 20 child models for the top S&P 500 stocks.
+
+### Pipeline Steps
+
+| Step | Type | Instance | What it does |
+|:---|:---|:---|:---|
+| FetchOHLCVData | SKLearn Processing | ml.c5.xlarge | Fetch 1yr OHLCV + RSI14 + MACD for 21 tickers via yfinance |
+| TrainParentModel | PyTorch Training | ml.c5.xlarge | Train LSTM on ^GSPC (3 epochs, lr=1e-3) |
+| TrainChildModels | PyTorch Training | ml.c5.xlarge | Transfer-learn all 20 children (freeze LSTM, retrain FC, 2 epochs) |
+| EvaluateModels | SKLearn Processing | ml.c5.xlarge | Evaluate all models (MSE, RMSE, R2) on validation splits |
+
+### Running the Pipeline
+
+```bash
+# Install SageMaker SDK
+pip install -r sagemaker/requirements.txt
+
+# Set AWS credentials and SageMaker config
+export SAGEMAKER_ROLE_ARN=$(cd terraform && terraform output -raw sagemaker_role_arn)
+export SAGEMAKER_BUCKET=$(cd terraform && terraform output -raw sagemaker_bucket)
+
+# Create and run the pipeline
+cd sagemaker
+python run_pipeline.py create
+python run_pipeline.py start --wait
+
+# Check status
+python run_pipeline.py status
+
+# Override parameters at runtime
+python run_pipeline.py start \
+  --instance-type ml.c5.2xlarge \
+  --parent-epochs 5 \
+  --child-epochs 3 \
+  --lookback-days 730
+```
+
+The pipeline can also be triggered via GitHub Actions (manual dispatch or weekly schedule on Sundays at 2am UTC).
+
+### S3 Artifact Layout
+
+```
+s3://{bucket}/sagemaker/
+  data/              # Preprocessed CSVs (auto-expires after 30 days)
+    GSPC.csv
+    AAPL.csv, MSFT.csv, ...
+    manifest.json
+  models/
+    parent/          # Parent model artifacts (model.tar.gz)
+    children/        # Child model artifacts (model.tar.gz)
+  evaluation/        # Evaluation reports (auto-expires after 90 days)
+    evaluation_report.json
+```
+
+### Terraform Resources
+
+The SageMaker module (`terraform/modules/sagemaker/`) provisions:
+- **S3 bucket** with versioning, encryption, lifecycle policies, and public access block
+- **IAM execution role** with S3, ECR, CloudWatch Logs, and SageMaker access
+- CI role permissions for pipeline management via GitHub Actions
+
+---
+
 ## How Transfer Learning Works
 
 The parent model learns general market dynamics from the S&P 500. Child models inherit those weights and fine-tune on individual tickers, needing far less data and fewer epochs.
 
-**Model architecture:** 3-layer LSTM (128 hidden units, 20% dropout) → FC output layer.
+**Model architecture:** 1-layer LSTM (32 hidden units) → FC output layer.
 **Input features:** Open, High, Low, Close, Volume, RSI14, MACD (7 features).
-**Context window:** 60 trading days. **Forecast horizon:** 5 business days.
+**Context window:** 10 trading days. **Forecast horizon:** 1-day ahead (autoregressive to 63 days).
+**Training data:** 1 year lookback from execution date.
 
 ---
 
@@ -363,6 +465,17 @@ scripts/
   ml_cli.py                  Python CLI called by Go (train, predict, analyze, monitor)
   smoke.sh                   Endpoint smoke tests
 
+sagemaker/
+  config.py                  SageMaker pipeline configuration (tickers, instances, hyperparams)
+  pipeline.py                4-step SageMaker Pipeline definition
+  run_pipeline.py            CLI to create, start, and inspect pipeline executions
+  requirements.txt           SageMaker SDK dependencies
+  scripts/
+    preprocess.py            Fetch OHLCV data for all tickers (Processing step)
+    train_parent.py          Train parent LSTM on ^GSPC (Training step)
+    train_children.py        Train 20 children via transfer learning (Training step)
+    evaluate.py              Evaluate all models (Processing step)
+
 frontend/                    React 19 + Vite 6 SPA (port 8501)
   src/
     api/                     Axios modules (analyze, train, predict, monitor, system)
@@ -375,8 +488,10 @@ frontend/                    React 19 + Vite 6 SPA (port 8501)
 
 feature_store/               Feast config and feature definitions
 k8s/                         Kubernetes manifests (api, llama, redis, qdrant, prometheus, grafana, frontend)
+terraform/                   IaC (EKS, VPC, IAM, ECR, ElastiCache, SQS, Secrets Manager, SageMaker)
 prometheus/                  Prometheus scrape config
 doc/                         System design, API baseline, deployment docs
+.github/workflows/           CI (PR gate), CD (push to main), Train (SageMaker pipeline)
 ```
 
 ---
@@ -419,6 +534,9 @@ Starts Minikube, builds images, deploys all services, and waits for readiness. R
 | `DAGSHUB_REPO_NAME` | — | DagsHub repo name (optional) |
 | `DAGSHUB_TOKEN` | — | DagsHub token (optional) |
 | `API_URL` | `http://localhost:8000` | Browser-accessible API URL (frontend runtime config) |
+| `SAGEMAKER_ROLE_ARN` | — | SageMaker execution role ARN (from Terraform output) |
+| `SAGEMAKER_BUCKET` | — | S3 bucket for SageMaker artifacts (from Terraform output) |
+| `AWS_REGION` | `us-east-1` | AWS region for SageMaker |
 
 ---
 

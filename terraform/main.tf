@@ -48,12 +48,17 @@ module "vpc" {
 }
 
 module "iam" {
-  source        = "./modules/iam"
-  cluster_name  = var.cluster_name
-  aws_region    = var.aws_region
-  github_org    = var.github_org
-  github_repo   = var.github_repo
-  ecr_repo_arns = [module.ecr.api_repository_arn, module.ecr.frontend_repository_arn]
+  source         = "./modules/iam"
+  cluster_name   = var.cluster_name
+  aws_region     = var.aws_region
+  github_org     = var.github_org
+  github_repo    = var.github_repo
+  ecr_repo_arns  = [module.ecr.api_repository_arn, module.ecr.frontend_repository_arn]
+  enable_sqs     = true
+  sqs_queue_arn  = module.sqs.queue_arn
+  sqs_dlq_arn    = module.sqs.dlq_arn
+  enable_secrets = true
+  secrets_arn    = module.secrets.secret_arn
 }
 
 module "eks" {
@@ -70,4 +75,40 @@ module "eks" {
   node_min_size      = var.node_min_size
   node_max_size      = var.node_max_size
   node_desired_size  = var.node_desired_size
+
+  # GPU node group
+  gpu_enabled       = var.gpu_enabled
+  gpu_instance_type = var.gpu_instance_type
+  gpu_desired_size  = var.gpu_desired_size
+  gpu_max_size      = var.gpu_max_size
+  gpu_min_size      = var.gpu_min_size
+}
+
+# ── Managed services ─────────────────────────────────────────────────────────
+
+module "elasticache" {
+  source                    = "./modules/elasticache"
+  cluster_name              = var.cluster_name
+  vpc_id                    = module.vpc.vpc_id
+  private_subnet_ids        = module.vpc.private_subnet_ids
+  node_security_group_id    = module.eks.node_security_group_id
+  cluster_security_group_id = module.eks.cluster_security_group_id
+}
+
+module "sqs" {
+  source       = "./modules/sqs"
+  cluster_name = var.cluster_name
+}
+
+module "secrets" {
+  source            = "./modules/secrets"
+  cluster_name      = var.cluster_name
+  finnhub_api_key   = var.finnhub_api_key
+  slack_webhook_url = var.slack_webhook_url
+  alert_email       = var.alert_email
+}
+
+module "sagemaker" {
+  source       = "./modules/sagemaker"
+  cluster_name = var.cluster_name
 }

@@ -1,0 +1,120 @@
+name: Train Models (SageMaker)
+
+on:
+  workflow_dispatch:
+    inputs:
+      instance_type:
+        description: "SageMaker training instance type"
+        required: false
+        default: "ml.c5.xlarge"
+        type: choice
+        options:
+          - ml.c5.large
+          - ml.c5.xlarge
+          - ml.c5.2xlarge
+      parent_epochs:
+        description: "Parent model training epochs"
+        required: false
+        default: "3"
+        type: string
+      child_epochs:
+        description: "Child model training epochs"
+        required: false
+        default: "2"
+        type: string
+      lookback_days:
+        description: "Historical data lookback (days)"
+        required: false
+        default: "365"
+        type: string
+      wait:
+        description: "Wait for pipeline completion"
+        required: false
+        default: true
+        type: boolean
+  schedule:
+    # Retrain weekly on Sunday at 2am UTC
+    - cron: "0 2 * * 0"
+
+env:
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  train:
+    name: Run SageMaker Training Pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get SageMaker config from Terraform
+        id: tf-outputs
+        run: |
+          cd terraform
+          terraform init -backend-config="bucket=stock-agent-ops-tfstate" \
+                         -backend-config="key=terraform.tfstate" \
+                         -backend-config="region=${{ env.AWS_REGION }}" \
+                         -backend-config="dynamodb_table=stock-agent-ops-tflock"
+          echo "sagemaker_role_arn=$(terraform output -raw sagemaker_role_arn)" >> "$GITHUB_OUTPUT"
+          echo "sagemaker_bucket=$(terraform output -raw sagemaker_bucket)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install SageMaker SDK
+        run: pip install -r sagemaker/requirements.txt
+
+      - name: Create/Update Pipeline
+        env:
+          SAGEMAKER_ROLE_ARN: ${{ steps.tf-outputs.outputs.sagemaker_role_arn }}
+          SAGEMAKER_BUCKET: ${{ steps.tf-outputs.outputs.sagemaker_bucket }}
+        working-directory: sagemaker
+        run: python run_pipeline.py create
+
+      - name: Start Pipeline Execution
+        env:
+          SAGEMAKER_ROLE_ARN: ${{ steps.tf-outputs.outputs.sagemaker_role_arn }}
+          SAGEMAKER_BUCKET: ${{ steps.tf-outputs.outputs.sagemaker_bucket }}
+        working-directory: sagemaker
+        run: |
+          ARGS="start --name gha-${{ github.run_number }}"
+
+          if [ "${{ inputs.instance_type }}" != "" ]; then
+            ARGS="$ARGS --instance-type ${{ inputs.instance_type }}"
+          fi
+          if [ "${{ inputs.parent_epochs }}" != "" ]; then
+            ARGS="$ARGS --parent-epochs ${{ inputs.parent_epochs }}"
+          fi
+          if [ "${{ inputs.child_epochs }}" != "" ]; then
+            ARGS="$ARGS --child-epochs ${{ inputs.child_epochs }}"
+          fi
+          if [ "${{ inputs.lookback_days }}" != "" ]; then
+            ARGS="$ARGS --lookback-days ${{ inputs.lookback_days }}"
+          fi
+          if [ "${{ inputs.wait }}" = "true" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            ARGS="$ARGS --wait"
+          fi
+
+          python run_pipeline.py $ARGS
+
+      - name: Check Pipeline Status
+        if: always()
+        env:
+          SAGEMAKER_ROLE_ARN: ${{ steps.tf-outputs.outputs.sagemaker_role_arn }}
+          SAGEMAKER_BUCKET: ${{ steps.tf-outputs.outputs.sagemaker_bucket }}
+        working-directory: sagemaker
+        run: python run_pipeline.py status

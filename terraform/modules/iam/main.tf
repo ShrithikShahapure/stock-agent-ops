@@ -26,7 +26,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 
   tags = { Name = "github-actions-oidc" }
 
-  lifecycle { prevent_destroy = true }
+
 }
 
 # ── Terraform Cloud OIDC provider ────────────────────────────────────────────
@@ -75,7 +75,7 @@ resource "aws_iam_role" "github_actions_ci" {
   description          = "Assumed by GitHub Actions via OIDC for ECR and EKS operations"
   max_session_duration = 7200
 
-  lifecycle { prevent_destroy = true }
+
 }
 
 data "aws_iam_policy_document" "github_actions_ci" {
@@ -196,6 +196,95 @@ data "aws_iam_policy_document" "github_actions_ci" {
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]
   }
+
+  statement {
+    sid       = "TFManageSQS"
+    effect    = "Allow"
+    actions   = ["sqs:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "TFManageSecretsManager"
+    effect    = "Allow"
+    actions   = ["secretsmanager:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "TFManageElastiCache"
+    effect    = "Allow"
+    actions   = ["elasticache:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "TFManageELB"
+    effect    = "Allow"
+    actions   = ["elasticloadbalancing:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "TFManageSageMaker"
+    effect    = "Allow"
+    actions   = ["sagemaker:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "SageMakerS3Access"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+      "s3:CreateBucket",
+      "s3:DeleteBucket",
+      "s3:PutBucketVersioning",
+      "s3:PutEncryptionConfiguration",
+      "s3:PutBucketPublicAccessBlock",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:PutLifecycleConfiguration",
+      "s3:GetLifecycleConfiguration",
+      "s3:GetBucketVersioning",
+      "s3:GetEncryptionConfiguration",
+      "s3:GetBucketPolicy",
+      "s3:GetBucketAcl",
+      "s3:GetBucketCORS",
+      "s3:GetBucketWebsite",
+      "s3:GetBucketLogging",
+      "s3:GetAccelerateConfiguration",
+      "s3:GetBucketRequestPayment",
+      "s3:GetBucketObjectLockConfiguration",
+      "s3:GetObjectTagging",
+      "s3:GetBucketTagging",
+      "s3:PutBucketTagging",
+      "s3:ListAllMyBuckets",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "arn:${local.partition}:s3:::${var.cluster_name}-sagemaker-*",
+      "arn:${local.partition}:s3:::${var.cluster_name}-sagemaker-*/*",
+    ]
+  }
+
+  statement {
+    sid    = "SageMakerPassRole"
+    effect = "Allow"
+    actions = [
+      "iam:PassRole",
+    ]
+    resources = [
+      "arn:${local.partition}:iam::${local.account_id}:role/${var.cluster_name}-sagemaker-*",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["sagemaker.amazonaws.com"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "github_actions_ci" {
@@ -302,4 +391,149 @@ resource "aws_iam_role_policy_attachment" "eks_ecr_readonly" {
 resource "aws_iam_role_policy_attachment" "eks_ebs_csi" {
   role       = aws_iam_role.eks_node.name
   policy_arn = "arn:${local.partition}:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+# ── Node role: SSM for Fleet Manager access ──────────────────────────────────
+
+resource "aws_iam_role_policy_attachment" "eks_node_ssm" {
+  role       = aws_iam_role.eks_node.name
+  policy_arn = "arn:${local.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# ── Node role: SQS access for training job queue ─────────────────────────────
+
+resource "aws_iam_role_policy" "eks_node_sqs" {
+  count = var.enable_sqs ? 1 : 0
+
+  name = "${var.cluster_name}-node-sqs"
+  role = aws_iam_role.eks_node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "SQSSendReceive"
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:GetQueueUrl",
+        ]
+        Resource = compact([var.sqs_queue_arn, var.sqs_dlq_arn])
+      }
+    ]
+  })
+}
+
+# ── Node role: Secrets Manager read access ───────────────────────────────────
+
+resource "aws_iam_role_policy" "eks_node_secrets" {
+  count = var.enable_secrets ? 1 : 0
+
+  name = "${var.cluster_name}-node-secrets"
+  role = aws_iam_role.eks_node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "SecretsManagerRead"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ]
+        Resource = [var.secrets_arn]
+      }
+    ]
+  })
+}
+
+# ── Node role: Elastic Load Balancing for ALB Ingress Controller ─────────────
+
+resource "aws_iam_role_policy_attachment" "eks_node_elb" {
+  role       = aws_iam_role.eks_node.name
+  policy_arn = "arn:${local.partition}:iam::aws:policy/ElasticLoadBalancingFullAccess"
+}
+
+# ── Node role: EC2 permissions for AWS Load Balancer Controller ──────────────
+
+resource "aws_iam_role_policy" "eks_node_alb_controller" {
+  name = "${var.cluster_name}-node-alb-controller"
+  role = aws_iam_role.eks_node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EC2Permissions"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateSecurityGroup",
+          "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:CreateTags",
+          "ec2:DeleteTags",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeInstances",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeInternetGateways",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeAccountAttributes",
+          "ec2:DescribeAddresses",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeCoipPools",
+          "ec2:GetCoipPoolUsage",
+          "ec2:DescribeTags",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "IAMPermissions"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateServiceLinkedRole",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "elasticloadbalancing.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "WAFPermissions"
+        Effect = "Allow"
+        Action = [
+          "wafv2:GetWebACL",
+          "wafv2:GetWebACLForResource",
+          "wafv2:AssociateWebACL",
+          "wafv2:DisassociateWebACL",
+          "shield:GetSubscriptionState",
+          "shield:DescribeProtection",
+          "shield:CreateProtection",
+          "shield:DeleteProtection",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "CognitoPermissions"
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:DescribeUserPoolClient",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ACMPermissions"
+        Effect = "Allow"
+        Action = [
+          "acm:ListCertificates",
+          "acm:DescribeCertificate",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
 }
